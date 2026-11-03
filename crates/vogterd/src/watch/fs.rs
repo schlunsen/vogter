@@ -24,25 +24,37 @@ enum Change {
     Removed,
 }
 
-pub fn spawn(tx: Sender<Signal>, home: Option<String>) -> Result<(), String> {
-    let mut launch_dirs = vec![
-        PathBuf::from("/Library/LaunchDaemons"),
-        PathBuf::from("/Library/LaunchAgents"),
-    ];
-    let mut tcc_dirs = vec![PathBuf::from("/Library/Application Support/com.apple.TCC")];
-    if let Some(h) = &home {
-        launch_dirs.push(Path::new(h).join("Library/LaunchAgents"));
-        tcc_dirs.push(Path::new(h).join("Library/Application Support/com.apple.TCC"));
-    }
+const SYSTEM_LAUNCH_DIRS: &[&str] = &["/Library/LaunchDaemons", "/Library/LaunchAgents"];
+const SYSTEM_TCC_DIR: &str = "/Library/Application Support/com.apple.TCC";
 
+/// The watched user's folders: (LaunchAgents, TCC).
+fn user_dirs(home: &str) -> [PathBuf; 2] {
+    let h = Path::new(home);
+    [
+        h.join("Library/LaunchAgents"),
+        h.join("Library/Application Support/com.apple.TCC"),
+    ]
+}
+
+fn current_home() -> Option<String> {
+    vogter_sensors::user::target().map(|u| u.home)
+}
+
+/// Watches the system folders, plus those of whoever is at the console, and
+/// follows logins, logouts and fast user switching.
+pub fn spawn(tx: Sender<Signal>) -> Result<(), String> {
     let (etx, erx) = mpsc::channel();
     let mut watcher = notify::recommended_watcher(etx).map_err(|e| e.to_string())?;
     let mut watching = 0;
-    for dir in launch_dirs.iter().chain(&tcc_dirs) {
-        match watcher.watch(dir, RecursiveMode::NonRecursive) {
+    for dir in SYSTEM_LAUNCH_DIRS.iter().copied().chain([SYSTEM_TCC_DIR]) {
+        match watcher.watch(Path::new(dir), RecursiveMode::NonRecursive) {
             Ok(()) => watching += 1,
-            Err(e) => tracing::debug!(dir = %dir.display(), "not watching: {e}"),
+            Err(e) => tracing::debug!(dir, "not watching: {e}"),
         }
+    }
+    let mut home = current_home();
+    if let Some(h) = &home {
+        watching += watch_user(&mut watcher, h);
     }
     if watching == 0 {
         return Err("no folder could be watched".into());
@@ -51,11 +63,28 @@ pub fn spawn(tx: Sender<Signal>, home: Option<String>) -> Result<(), String> {
     thread::Builder::new()
         .name("fs-watch".into())
         .spawn(move || {
-            let _keep_alive = watcher;
             let mut pending: BTreeMap<PathBuf, Change> = BTreeMap::new();
             let mut tcc_dirty = false;
             let mut last_tcc_scan: Option<Instant> = None;
             loop {
+                // Follow the console user (checked whenever things are quiet).
+                let now_home = current_home();
+                if now_home != home {
+                    if let Some(old) = &home {
+                        for d in user_dirs(old) {
+                            let _ = watcher.unwatch(&d);
+                        }
+                    }
+                    if let Some(new) = &now_home {
+                        watch_user(&mut watcher, new);
+                    }
+                    tracing::info!(from = ?home, to = ?now_home, "console user changed; watching their folders");
+                    home = now_home;
+                    let _ = tx.send(Signal::Rescan("console user changed"));
+                }
+                let is_tcc = |p: &Path| {
+                    p.starts_with(SYSTEM_TCC_DIR) || home.as_deref().is_some_and(|h| p.starts_with(&user_dirs(h)[1]))
+                };
                 match erx.recv_timeout(SETTLE) {
                     Ok(Ok(event)) => {
                         let change = match event.kind {
@@ -65,7 +94,7 @@ pub fn spawn(tx: Sender<Signal>, home: Option<String>) -> Result<(), String> {
                             _ => continue,
                         };
                         for path in event.paths {
-                            if tcc_dirs.iter().any(|d| path.starts_with(d)) {
+                            if is_tcc(&path) {
                                 tcc_dirty = true;
                             } else if path.extension().is_some_and(|e| e == "plist") {
                                 // A create followed by writes is still an addition.
@@ -108,6 +137,19 @@ pub fn spawn(tx: Sender<Signal>, home: Option<String>) -> Result<(), String> {
         })
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+fn watch_user(watcher: &mut notify::RecommendedWatcher, home: &str) -> usize {
+    user_dirs(home)
+        .iter()
+        .filter(|d| match watcher.watch(d, RecursiveMode::NonRecursive) {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::debug!(dir = %d.display(), "not watching: {e}");
+                false
+            }
+        })
+        .count()
 }
 
 fn describe(path: &Path, change: Change) -> Activity {

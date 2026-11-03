@@ -48,7 +48,8 @@ brew services stop vogter
 sudo scripts/install-daemon.sh      # from a checkout of this repository
 ```
 
-Then give `/Applications/Vogter.app/Contents/Helpers/vogterd` Full Disk Access.
+The installer copies `vogterd` to `/Library/PrivilegedHelperTools/com.vogter.vogterd`
+(root-owned) after checking its signature. Give that path Full Disk Access.
 
 Uninstall: `brew services stop vogter`, `brew uninstall --cask vogter`, `brew uninstall vogter`.
 `brew uninstall --zap --cask vogter` also deletes `~/Library/Application Support/Vogter`

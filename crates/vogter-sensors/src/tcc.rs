@@ -23,7 +23,8 @@ unsafe extern "C" {
     ) -> CFArrayRef;
 }
 
-pub fn collect(errors: &mut Vec<String>) -> Vec<TccGrant> {
+/// Errors are `(source, message)`, where source is [`source_for`] of the database.
+pub fn collect(errors: &mut Vec<(String, String)>) -> Vec<TccGrant> {
     let mut grants = Vec::new();
     let user_db = crate::user::target()
         .map(|u| {
@@ -41,8 +42,9 @@ pub fn collect(errors: &mut Vec<String>) -> Vec<TccGrant> {
         let Ok(path) = path else { continue };
         match read_db(&path, scope) {
             Ok(mut g) => grants.append(&mut g),
-            Err(e) => errors.push(format!(
-                "{path}: {e} (grant Full Disk Access to your terminal to read it)"
+            Err(e) => errors.push((
+                source_for(scope).into(),
+                format!("{path}: {e} (grant Full Disk Access to your terminal to read it)"),
             )),
         }
     }
@@ -103,6 +105,14 @@ fn bundle_path(bundle_id: &str) -> Option<String> {
         .next()
         .and_then(|u| u.to_path())
         .map(|p| p.display().to_string())
+}
+
+/// Source label for findings from one permission database.
+pub fn source_for(scope: TccScope) -> &'static str {
+    match scope {
+        TccScope::System => "tcc:system",
+        TccScope::User => "tcc:user",
+    }
 }
 
 /// Human name for a TCC service.

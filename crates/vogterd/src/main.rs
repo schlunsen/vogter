@@ -9,7 +9,7 @@ mod daemon;
 mod server;
 mod watch;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
@@ -54,8 +54,10 @@ fn main() -> Result<()> {
         PathBuf::from(std::env::var("HOME").context("HOME not set")?)
             .join("Library/Application Support/Vogter")
     };
-    std::fs::create_dir_all(&data_dir)
-        .with_context(|| format!("creating {}", data_dir.display()))?;
+    // Monitoring history is sensitive: nothing we create may be readable by others.
+    // SAFETY: umask has no preconditions.
+    unsafe { libc::umask(0o077) };
+    secure_dir(&data_dir)?;
     let socket = args.socket.clone().unwrap_or_else(|| {
         if as_root {
             PathBuf::from(vogter_ipc::SYSTEM_SOCKET)
@@ -69,6 +71,7 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| data_dir.join("vogter.db"));
 
     let store = Store::open(&db).with_context(|| format!("opening {}", db.display()))?;
+    secure_db_files(&db)?;
     let (scan_tx, scan_rx) = mpsc::channel();
     let daemon = Arc::new(Daemon::new(
         store,
@@ -98,6 +101,36 @@ fn main() -> Result<()> {
     server::run(&socket, daemon)
 }
 
+/// Create (or tighten) a private data directory: 0700, owned by us, not a symlink.
+fn secure_dir(dir: &Path) -> Result<()> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    let meta = std::fs::symlink_metadata(dir)?;
+    // SAFETY: geteuid has no preconditions.
+    let me = unsafe { libc::geteuid() };
+    if meta.file_type().is_symlink() || !meta.is_dir() || meta.uid() != me {
+        anyhow::bail!(
+            "{} must be a real directory owned by uid {me}; refusing to use it",
+            dir.display()
+        );
+    }
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+        .with_context(|| format!("securing {}", dir.display()))
+}
+
+/// The database and SQLite's sidecar files must be private (0600).
+fn secure_db_files(db: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    for suffix in ["", "-wal", "-shm", "-journal"] {
+        let p = PathBuf::from(format!("{}{suffix}", db.display()));
+        if p.exists() {
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600))
+                .with_context(|| format!("securing {}", p.display()))?;
+        }
+    }
+    Ok(())
+}
+
 /// Start live sources: Endpoint Security when possible, polling fallbacks otherwise.
 fn start_realtime(tx: mpsc::Sender<watch::Signal>, args: &Args) -> vogter_ipc::Realtime {
     let home = vogter_sensors::user::target().map(|u| u.home);
@@ -107,8 +140,20 @@ fn start_realtime(tx: mpsc::Sender<watch::Signal>, args: &Args) -> vogter_ipc::R
         rt.endpoint_security_error = Some("disabled with --no-endpoint-security".into());
     } else {
         let (es_tx, es_rx) = mpsc::channel::<vogter_es::EsEvent>();
-        match vogter_es::start(home.as_deref().unwrap_or("/var/empty"), es_tx) {
-            Ok(()) => {
+        match vogter_es::start(home.as_deref(), es_tx) {
+            Ok(handle) => {
+                // Re-target the secret-file watch when someone else logs in at the console.
+                let mut current = home.clone();
+                thread::spawn(move || {
+                    loop {
+                        thread::sleep(Duration::from_secs(5));
+                        let now = vogter_sensors::user::target().map(|u| u.home);
+                        if now != current {
+                            handle.set_home(now.clone());
+                            current = now;
+                        }
+                    }
+                });
                 let tx = tx.clone();
                 thread::spawn(move || es_rx.into_iter().for_each(|e| drop(tx.send(e.into()))));
                 rt.endpoint_security = true;
@@ -125,7 +170,7 @@ fn start_realtime(tx: mpsc::Sender<watch::Signal>, args: &Args) -> vogter_ipc::R
         Ok(()) => rt.sources.push(name.into()),
         Err(e) => tracing::warn!(source = name, "not started: {e}"),
     };
-    start("fs_events", watch::fs::spawn(tx.clone(), home));
+    start("fs_events", watch::fs::spawn(tx.clone()));
     if !rt.endpoint_security {
         let every = Duration::from_millis(args.proc_poll_ms);
         start(

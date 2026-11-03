@@ -171,9 +171,10 @@ Vogter has two parts: a background **service** (`vogterd`) that does the watchin
 
 2. **Grant Full Disk Access**, so Vogter can see which apps hold privacy permissions. Open
    **System Settings → Privacy & Security → Full Disk Access**, click **+**, press
-   <kbd>⌘</kbd><kbd>⇧</kbd><kbd>G</kbd> and enter the path to `vogterd`. For the app
-   install that's `/Applications/Vogter.app/Contents/Helpers/vogterd`; for Homebrew, use the
-   path printed by `realpath "$(brew --prefix)/bin/vogterd"`. Then restart the service.
+   <kbd>⌘</kbd><kbd>⇧</kbd><kbd>G</kbd> and enter the path to `vogterd`. For the root
+   service that's `/Library/PrivilegedHelperTools/com.vogter.vogterd` (the installer copies it
+   there, out of reach of non-admin processes); for Homebrew, use the path printed by
+   `realpath "$(brew --prefix)/bin/vogterd"`. Then restart the service.
 
 3. **Open Vogter** and **allow notifications** when asked.
 

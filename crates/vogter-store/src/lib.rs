@@ -27,6 +27,8 @@ pub struct ScanDiff {
     pub resolved: Vec<StoredFinding>,
     /// First scan ever recorded.
     pub baseline: bool,
+    /// Findings kept as they were because the sensor that reports them failed.
+    pub kept_unknown: usize,
 }
 
 const SCHEMA: &str = "
@@ -225,6 +227,18 @@ impl Store {
 
     /// Merge one scan's findings into history and report the differences.
     pub fn record_scan(&mut self, at: u64, findings: &[Finding]) -> Result<ScanDiff> {
+        self.record_scan_with(at, findings, |_| false)
+    }
+
+    /// Like [`record_scan`](Self::record_scan), but a missing finding for which
+    /// `unknown` is true stays active: the sensor that would see it failed this
+    /// time, so its absence says nothing.
+    pub fn record_scan_with(
+        &mut self,
+        at: u64,
+        findings: &[Finding],
+        unknown: impl Fn(&Finding) -> bool,
+    ) -> Result<ScanDiff> {
         let tx = self.conn.transaction()?;
         let baseline = tx.query_row("SELECT COUNT(*) FROM scans", [], |r| r.get::<_, i64>(0))? == 0;
 
@@ -269,15 +283,18 @@ impl Store {
             }
         }
 
-        // Whatever is left in `active` disappeared in this scan.
+        // Whatever is left in `active` wasn't seen in this scan.
         for key in active {
+            let Some(sf) = load(&tx, &key)? else { continue };
+            if unknown(&sf.finding) {
+                diff.kept_unknown += 1;
+                continue;
+            }
             tx.execute(
                 "UPDATE findings SET resolved_at = ?2 WHERE key = ?1",
                 params![key, at],
             )?;
-            if let Some(sf) = load(&tx, &key)? {
-                diff.resolved.push(sf);
-            }
+            diff.resolved.push(sf);
         }
 
         tx.execute(
@@ -393,6 +410,7 @@ mod tests {
             pid: Some(1),
             path: Some("/x".into()),
             signing: None,
+            source: None,
         }
     }
 
@@ -444,6 +462,37 @@ mod tests {
         let d = s.record_scan(4, &[finding("a")]).unwrap();
         assert_eq!(d.new.len(), 1);
         assert_eq!(s.active(false).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn failed_sensor_does_not_resolve_its_findings() {
+        let mut s = Store::in_memory().unwrap();
+        let tcc = Finding {
+            check: "tcc.listenevent".into(),
+            source: Some("tcc:user".into()),
+            ..finding("Some app has Input Monitoring")
+        };
+        let other = finding("a");
+        s.record_scan(1, &[tcc.clone(), other.clone()]).unwrap();
+
+        // The user TCC database couldn't be read this time: its finding stays, the other resolves.
+        let d = s
+            .record_scan_with(2, &[], |f| f.source.as_deref() == Some("tcc:user"))
+            .unwrap();
+        assert_eq!(d.kept_unknown, 1);
+        assert_eq!(
+            d.resolved
+                .iter()
+                .map(|f| f.finding.title.as_str())
+                .collect::<Vec<_>>(),
+            ["a"]
+        );
+        let active = s.active(true).unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].finding.check, "tcc.listenevent");
+
+        // Next scan sees it again: not "new".
+        assert!(s.record_scan(3, &[tcc]).unwrap().new.is_empty());
     }
 
     #[test]

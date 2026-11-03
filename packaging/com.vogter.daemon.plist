@@ -6,10 +6,13 @@
     <string>com.vogter.daemon</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Applications/Vogter.app/Contents/Helpers/vogterd</string>
+        <string>/Library/PrivilegedHelperTools/com.vogter.vogterd</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
+    <!-- 077: the log and anything else the service creates is private to root. -->
+    <key>Umask</key>
+    <integer>63</integer>
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>

@@ -10,6 +10,7 @@
 
 use std::ffi::OsStr;
 use std::sync::mpsc::Sender;
+use std::sync::{Arc, RwLock};
 use std::thread;
 
 use endpoint_sec::sys::{es_event_type_t, es_mute_inversion_type_t, es_mute_path_type_t};
@@ -42,7 +43,19 @@ const MAIN_EVENTS: &[es_event_type_t] = &[
 
 /// Start both clients. `home` is the user whose secrets to guard.
 /// Returns once the clients are subscribed, or with the reason they could not be.
-pub fn start(home: &str, tx: Sender<EsEvent>) -> Result<(), String> {
+/// Lets the daemon re-target the secret-file watch when the console user changes.
+pub struct EsHandle {
+    home_tx: Sender<Option<String>>,
+}
+
+impl EsHandle {
+    /// Guard this user's secrets from now on (`None` at the login window).
+    pub fn set_home(&self, home: Option<String>) {
+        let _ = self.home_tx.send(home);
+    }
+}
+
+pub fn start(home: Option<&str>, tx: Sender<EsEvent>) -> Result<EsHandle, String> {
     let (ready_tx, ready_rx) = std::sync::mpsc::channel();
 
     let main_tx = tx.clone();
@@ -62,35 +75,50 @@ pub fn start(home: &str, tx: Sender<EsEvent>) -> Result<(), String> {
                     Ok(())
                 },
                 move |msg| main_event(&msg, &main_tx),
+                park_forever,
             )
         })
         .map_err(|e| e.to_string())?;
 
-    let areas = sensitive_areas(home);
+    let areas = Arc::new(RwLock::new(home.map(sensitive_areas).unwrap_or_default()));
+    let (home_tx, home_rx) = std::sync::mpsc::channel::<Option<String>>();
     let file_tx = tx;
     thread::Builder::new()
         .name("es-files".into())
         .spawn(move || {
-            let prefixes: Vec<String> = areas.iter().map(|a| a.prefix.clone()).collect();
+            let handler_areas = areas.clone();
+            let initial: Vec<SensitiveArea> = areas.read().unwrap().clone();
             run(
                 ready_tx,
                 move |client| {
                     client
                         .invert_muting(es_mute_inversion_type_t::ES_MUTE_INVERSION_TYPE_TARGET_PATH)
                         .map_err(|e| format!("{e:?}"))?;
-                    for p in &prefixes {
-                        client
-                            .mute_path(
-                                OsStr::new(p),
-                                es_mute_path_type_t::ES_MUTE_PATH_TYPE_TARGET_PREFIX,
-                            )
-                            .map_err(|e| format!("{e:?}"))?;
-                    }
+                    watch_only(client, &initial)?;
                     client
                         .subscribe(&[es_event_type_t::ES_EVENT_TYPE_NOTIFY_OPEN])
                         .map_err(|e| format!("{e:?}"))
                 },
-                move |msg| file_event(&msg, &areas, &file_tx),
+                move |msg| {
+                    let areas = handler_areas.read().unwrap_or_else(|e| e.into_inner());
+                    file_event(&msg, &areas, &file_tx)
+                },
+                move |client| {
+                    // Follow logins and user switches: guard the new user's secrets.
+                    for home in home_rx {
+                        let next = home.as_deref().map(sensitive_areas).unwrap_or_default();
+                        if let Err(e) = client.unmute_all_target_paths() {
+                            tracing::warn!("es: unmuting target paths failed: {e:?}");
+                            continue;
+                        }
+                        if let Err(e) = watch_only(client, &next) {
+                            tracing::warn!("es: re-targeting secret files failed: {e}");
+                        }
+                        *areas.write().unwrap_or_else(|e| e.into_inner()) = next;
+                        tracing::info!(home = ?home, "es: secret-file watch re-targeted");
+                    }
+                    park_forever(client);
+                },
             )
         })
         .map_err(|e| e.to_string())?;
@@ -100,14 +128,16 @@ pub fn start(home: &str, tx: Sender<EsEvent>) -> Result<(), String> {
             .recv()
             .map_err(|_| "Endpoint Security thread died".to_string())??;
     }
-    Ok(())
+    Ok(EsHandle { home_tx })
 }
 
-/// Create a client, configure it, report readiness, then keep it alive forever.
+/// Create a client, configure it, report readiness, then hand it to `idle`,
+/// which keeps it alive (and may reconfigure it) for the life of the process.
 fn run(
     ready: Sender<Result<(), String>>,
     setup: impl FnOnce(&mut Client<'_>) -> Result<(), String>,
     handler: impl Fn(Message) + std::panic::RefUnwindSafe + 'static,
+    idle: impl FnOnce(&mut Client<'_>),
 ) {
     let me = std::process::id() as i32;
     let client = Client::new(move |_c: &mut Client<'_>, msg: Message| {
@@ -128,9 +158,26 @@ fn run(
     if failed {
         return;
     }
+    idle(&mut client);
+}
+
+fn park_forever(_: &mut Client<'_>) {
     loop {
         thread::park();
     }
+}
+
+/// Mute every path *except* the secret stores of `areas` (target-path muting is inverted).
+fn watch_only(client: &mut Client<'_>, areas: &[SensitiveArea]) -> Result<(), String> {
+    for a in areas {
+        client
+            .mute_path(
+                OsStr::new(&a.prefix),
+                es_mute_path_type_t::ES_MUTE_PATH_TYPE_TARGET_PREFIX,
+            )
+            .map_err(|e| format!("{e:?}"))?;
+    }
+    Ok(())
 }
 
 fn explain(err: &str) -> String {

@@ -460,7 +460,11 @@ impl Daemon {
         let trusted_keys: std::collections::HashSet<String> =
             trusted.iter().map(|f| f.key()).collect();
         let at = now();
-        let diff = lock(&self.store).record_scan(at, &findings);
+        // A sensor that failed this scan says nothing about the findings it reports:
+        // keep those as they were rather than marking them resolved.
+        let failed = &snap.sensor_errors;
+        let diff = lock(&self.store)
+            .record_scan_with(at, &findings, |f| failed.iter().any(|e| e.affects(f)));
         {
             let mut live = lock(&self.live);
             live.scanning = false;
@@ -482,6 +486,7 @@ impl Daemon {
             findings = findings.len(),
             new = diff.new.len(),
             resolved = diff.resolved.len(),
+            kept_unknown = diff.kept_unknown,
             baseline = diff.baseline,
             ms = started.elapsed().as_millis() as u64,
             "scan complete"

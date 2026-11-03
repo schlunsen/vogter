@@ -18,7 +18,14 @@ use vogter_model::{
 
 pub fn assess(snap: &Snapshot) -> Vec<Finding> {
     let mut out = Vec::new();
-    for tap in snap.event_taps.iter().filter(|t| t.enabled && t.keyboard) {
+    // Without a process list every tap would look like it came from a "vanished"
+    // process; the daemon keeps the previous tap findings instead.
+    let processes_known = !snap.sensor_errors.iter().any(|e| e.sensor == "process");
+    for tap in snap
+        .event_taps
+        .iter()
+        .filter(|t| t.enabled && t.keyboard && processes_known)
+    {
         out.push(event_tap(tap, snap.process(tap.tapping_pid)));
     }
     out.extend(
@@ -63,6 +70,7 @@ pub fn assess(snap: &Snapshot) -> Vec<Finding> {
             pid: None,
             path: None,
             signing: None,
+            source: None,
         }
     }));
     let mut seen = std::collections::HashSet::new();
@@ -95,6 +103,7 @@ pub fn assess(snap: &Snapshot) -> Vec<Finding> {
             pid: Some(l.pid),
             path: snap.process(l.pid).and_then(|p| p.path.clone()),
             signing,
+            source: None,
         });
     }
     out.extend(health(snap));
@@ -131,6 +140,7 @@ fn event_tap(tap: &EventTap, proc: Option<&ProcessInfo>) -> Finding {
         pid: Some(tap.tapping_pid),
         path: proc.and_then(|p| p.path.clone()),
         signing: proc.map(|p| p.signing.clone()),
+        source: None,
     };
     let Some(p) = proc else {
         return Finding {
@@ -226,6 +236,7 @@ fn tcc_grant(g: &TccGrant) -> Option<Finding> {
         pid: None,
         path: g.resolved_path.clone(),
         signing,
+        source: Some(tcc_source(g.scope).into()),
     })
 }
 
@@ -244,6 +255,7 @@ pub(crate) fn process(p: &ProcessInfo) -> Option<Finding> {
         pid: Some(p.pid),
         path: Some(path.into()),
         signing: Some(p.signing.clone()),
+        source: None,
     };
 
     if !p.exe_exists {
@@ -344,6 +356,7 @@ fn launch_item(item: &LaunchItem) -> Option<Finding> {
         pid: None,
         path: Some(program.into()),
         signing: item.signing.clone(),
+        source: Some(item.plist_path.clone()),
     };
 
     let exe = short_name(program);
@@ -473,6 +486,7 @@ fn health(snap: &Snapshot) -> Vec<Finding> {
             pid: None,
             path: None,
             signing: None,
+            source: None,
         })
         .collect()
 }
@@ -480,6 +494,14 @@ fn health(snap: &Snapshot) -> Vec<Finding> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Same labels as the TCC sensor uses for its databases.
+fn tcc_source(scope: vogter_model::TccScope) -> &'static str {
+    match scope {
+        vogter_model::TccScope::System => "tcc:system",
+        vogter_model::TccScope::User => "tcc:user",
+    }
+}
 
 /// Places malware likes to run from and legit software rarely does.
 pub(crate) fn suspicious_location(path: &str) -> Option<&'static str> {

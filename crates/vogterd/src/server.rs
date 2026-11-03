@@ -141,16 +141,27 @@ impl Policy {
             Signing::unknown()
         };
 
-        if let Some(team) = &self.team_id
-            && signing.team_id.as_ref() != Some(team)
-        {
-            bail!(
-                "uid {uid}: peer is {}, expected team {team}",
-                signing.describe()
-            );
+        if let Some(team) = &self.team_id {
+            check_team(team, &signing).map_err(|why| anyhow::anyhow!("uid {uid}: {why}"))?;
         }
         Ok(format!("uid {uid}, {}", signing.describe()))
     }
+}
+
+/// A signed daemon only talks to peers with a *valid* developer signature from
+/// its own team. The Team ID alone isn't enough: an invalid or untrusted
+/// signature can still carry the team identifier it claims.
+fn check_team(team: &str, peer: &Signing) -> std::result::Result<(), String> {
+    if peer.kind != SignatureKind::ThirdParty {
+        return Err(format!(
+            "peer is {}, not validly signed by team {team}",
+            peer.describe()
+        ));
+    }
+    if peer.team_id.as_deref() != Some(team) {
+        return Err(format!("peer is {}, expected team {team}", peer.describe()));
+    }
+    Ok(())
 }
 
 fn daemon_is_root() -> bool {
@@ -161,4 +172,29 @@ fn daemon_is_root() -> bool {
 /// Owner of /dev/console, i.e. the user logged in at the screen.
 fn console_uid() -> Option<u32> {
     std::fs::metadata("/dev/console").ok().map(|m| m.uid())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sig(kind: SignatureKind, team: Option<&str>) -> Signing {
+        Signing {
+            kind,
+            identifier: None,
+            team_id: team.map(str::to_string),
+            notarized: false,
+        }
+    }
+
+    #[test]
+    fn team_check_requires_valid_signature() {
+        assert!(check_team("T", &sig(SignatureKind::ThirdParty, Some("T"))).is_ok());
+        assert!(check_team("T", &sig(SignatureKind::ThirdParty, Some("X"))).is_err());
+        // Claimed team on a broken or non-Apple-anchored signature must not pass.
+        assert!(check_team("T", &sig(SignatureKind::Invalid, Some("T"))).is_err());
+        assert!(check_team("T", &sig(SignatureKind::Untrusted, Some("T"))).is_err());
+        assert!(check_team("T", &sig(SignatureKind::AdHoc, Some("T"))).is_err());
+        assert!(check_team("T", &sig(SignatureKind::Unknown, None)).is_err());
+    }
 }

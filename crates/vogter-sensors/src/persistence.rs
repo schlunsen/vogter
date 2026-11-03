@@ -8,7 +8,8 @@ use vogter_model::{CronEntry, LaunchItem, LaunchKind};
 
 use crate::codesign;
 
-pub fn launch_items(errors: &mut Vec<String>) -> Vec<LaunchItem> {
+/// Errors are `(source, message)`: the plist or folder that couldn't be read.
+pub fn launch_items(errors: &mut Vec<(String, String)>) -> Vec<LaunchItem> {
     let mut dirs = vec![
         (
             LaunchKind::SystemDaemon,
@@ -28,15 +29,24 @@ pub fn launch_items(errors: &mut Vec<String>) -> Vec<LaunchItem> {
 
     let mut items = Vec::new();
     for (kind, dir) in dirs {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(e) => e,
+            // A folder that doesn't exist just has no items.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => {
+                errors.push((dir.display().to_string(), format!("{}: {e}", dir.display())));
+                continue;
+            }
         };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().is_some_and(|e| e == "plist") {
                 match parse(kind, &path) {
                     Ok(item) => items.push(item),
-                    Err(e) => errors.push(format!("{}: {e}", path.display())),
+                    Err(e) => errors.push((
+                        path.display().to_string(),
+                        format!("{}: {e}", path.display()),
+                    )),
                 }
             }
         }
@@ -87,25 +97,33 @@ fn parse(kind: LaunchKind, path: &Path) -> Result<LaunchItem, String> {
 }
 
 /// The watched user's crontab (as root, also root's own).
-pub fn cron() -> Vec<CronEntry> {
+/// `Err` if a crontab couldn't be read (as opposed to not existing).
+pub fn cron() -> Result<Vec<CronEntry>, String> {
     let mut users: Vec<String> = crate::user::target().map(|u| u.name).into_iter().collect();
     if crate::user::is_root() {
         users.push("root".into());
     }
     users.dedup();
-    users.into_iter().flat_map(crontab).collect()
+    let mut out = Vec::new();
+    for u in users {
+        out.extend(crontab(u)?);
+    }
+    Ok(out)
 }
 
-fn crontab(user: String) -> Vec<CronEntry> {
+fn crontab(user: String) -> Result<Vec<CronEntry>, String> {
     let mut cmd = Command::new("/usr/bin/crontab");
     if crate::user::is_root() {
         cmd.args(["-u", &user]);
     }
     cmd.arg("-l");
-    let Ok(out) = cmd.output() else {
-        return Vec::new();
-    };
-    String::from_utf8_lossy(&out.stdout)
+    let out = cmd.output().map_err(|e| format!("crontab: {e}"))?;
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // `crontab -l` exits 1 with "no crontab for <user>" when there simply isn't one.
+    if !out.status.success() && !stderr.contains("no crontab") {
+        return Err(format!("crontab for {user}: {}", stderr.trim()));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
         .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
@@ -113,5 +131,5 @@ fn crontab(user: String) -> Vec<CronEntry> {
             user: user.clone(),
             line: line.to_string(),
         })
-        .collect()
+        .collect())
 }

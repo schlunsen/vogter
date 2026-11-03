@@ -17,7 +17,8 @@ it says why (`vogter status`) and runs the fallback watchers instead.
 ## What ES needs
 
 1. **Root.** Install with `sudo scripts/install-daemon.sh`.
-2. **Full Disk Access** for `/Applications/Vogter.app/Contents/Helpers/vogterd`.
+2. **Full Disk Access** for `/Library/PrivilegedHelperTools/com.vogter.vogterd` (where the
+   installer puts the root copy).
 3. **The `com.apple.developer.endpoint-security.client` entitlement.**
    Request it from Apple: <https://developer.apple.com/contact/request/system-extension/>
    (needs a paid developer account). Once granted, sign with your Developer ID,
@@ -32,8 +33,9 @@ Use a macOS virtual machine, **not your main Mac**:
    `sudo nvram boot-args="amfi_get_out_of_my_way=1"` and reboot.
    This lets ad-hoc-signed binaries claim restricted entitlements.
 3. Build there: `ENDPOINT_SECURITY=1 scripts/build-app.sh`
-4. Run `sudo build/Vogter.app/Contents/Helpers/vogterd` and grant Full Disk Access
-   to it (or to the terminal) when it reports `NotPermitted`.
+4. Install it as root: `sudo ALLOW_ADHOC=1 scripts/install-daemon.sh build/Vogter.app/Contents/Helpers/vogterd`
+   (never run a user-writable binary as root), then grant
+   `/Library/PrivilegedHelperTools/com.vogter.vogterd` Full Disk Access when it reports `NotPermitted`.
 5. `vogter status` should say `realtime: endpoint_security, fs_events`.
 
 The ES event handling lives in `crates/vogter-es`; all decisions (what is

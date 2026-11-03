@@ -87,6 +87,10 @@ pub struct Finding {
     pub path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signing: Option<Signing>,
+    /// Where the fact came from (a permission database, a startup plist), so a
+    /// failure to read that source doesn't make the finding look resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 impl Finding {
@@ -207,6 +211,58 @@ pub struct Snapshot {
     pub sensor_errors: Vec<SensorError>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn f(check: &str, source: Option<&str>) -> Finding {
+        Finding {
+            severity: Severity::Low,
+            category: Category::Persistence,
+            check: check.into(),
+            title: "t".into(),
+            detail: "d".into(),
+            pid: None,
+            path: None,
+            signing: None,
+            source: source.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn sensor_error_scope() {
+        let whole = SensorError {
+            sensor: "process".into(),
+            message: String::new(),
+            covers: vec!["process.".into()],
+            source: None,
+        };
+        assert!(whole.affects(&f("process.weak_signature", None)));
+        assert!(!whole.affects(&f("tcc.camera", None)));
+
+        let dir = SensorError {
+            sensor: "launchd".into(),
+            message: String::new(),
+            covers: vec!["persistence.".into()],
+            source: Some("/Users/me/Library/LaunchAgents".into()),
+        };
+        assert!(dir.affects(&f(
+            "persistence.launch_item",
+            Some("/Users/me/Library/LaunchAgents/x.plist")
+        )));
+        assert!(!dir.affects(&f(
+            "persistence.launch_item",
+            Some("/Library/LaunchDaemons/y.plist")
+        )));
+        // Prefix match is per path component, not per string.
+        assert!(!dir.affects(&f(
+            "persistence.launch_item",
+            Some("/Users/me/Library/LaunchAgentsX/z.plist")
+        )));
+        assert!(!dir.affects(&f("persistence.cron", None)));
+    }
+}
+
 impl Snapshot {
     pub fn process(&self, pid: i32) -> Option<&ProcessInfo> {
         self.processes.iter().find(|p| p.pid == pid)
@@ -217,6 +273,26 @@ impl Snapshot {
 pub struct SensorError {
     pub sensor: String,
     pub message: String,
+    /// Check-id prefixes whose findings this failure leaves unknown (e.g. `tcc.`).
+    #[serde(default)]
+    pub covers: Vec<String>,
+    /// Only findings from this source (or under this path) are affected; all if `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+impl SensorError {
+    /// Whether this failure means we can't tell if `f` still holds.
+    pub fn affects(&self, f: &Finding) -> bool {
+        self.covers.iter().any(|c| f.check.starts_with(c.as_str()))
+            && match &self.source {
+                None => true,
+                Some(src) => f
+                    .source
+                    .as_deref()
+                    .is_some_and(|fs| fs == src || fs.starts_with(&format!("{src}/"))),
+            }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

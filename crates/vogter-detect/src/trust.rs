@@ -147,6 +147,7 @@ mod tests {
             pid: None,
             path: Some(path.into()),
             signing: Some(signing),
+            source: None,
         }
     }
 

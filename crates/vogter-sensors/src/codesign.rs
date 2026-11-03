@@ -6,6 +6,8 @@
 
 use std::collections::HashMap;
 use std::ffi::c_void;
+use std::os::unix::fs::MetadataExt;
+use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
 use core_foundation::base::{CFType, CFTypeRef, OSStatus, TCFType};
@@ -248,11 +250,19 @@ fn guest(key: CFString, value: CFType) -> Option<Signing> {
     (status == ERR_SUCCESS && !raw.is_null()).then(|| Code { raw, dynamic: true }.classify())
 }
 
-/// Signature of a file or bundle on disk (cached by path).
+/// Signature of a file or bundle on disk.
+///
+/// Results are cached per path *and* file identity, so replacing or modifying
+/// the file (or a bundle's executable, Info.plist or signature) forces a fresh
+/// check instead of reusing the old verdict.
 pub fn for_path(path: &str) -> Signing {
-    static CACHE: OnceLock<Mutex<HashMap<String, Signing>>> = OnceLock::new();
+    static CACHE: OnceLock<Mutex<HashMap<String, (Stamp, Signing)>>> = OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
-    if let Some(hit) = cache.lock().unwrap().get(path) {
+    let stamp = stamp(Path::new(path));
+    if let Some((s, hit)) = cache.lock().unwrap().get(path)
+        && stamp.is_some()
+        && *s == stamp
+    {
         return hit.clone();
     }
 
@@ -274,11 +284,49 @@ pub fn for_path(path: &str) -> Signing {
         }
         None => Signing::unknown(),
     };
-    cache
-        .lock()
-        .unwrap()
-        .insert(path.to_string(), signing.clone());
+    if stamp.is_some() {
+        cache
+            .lock()
+            .unwrap()
+            .insert(path.to_string(), (stamp, signing.clone()));
+    }
     signing
+}
+
+/// What identifies a file's current contents without hashing it.
+type FileStamp = (u64, u64, u64, i64, i64, i64, i64);
+/// A file's stamp, or for a bundle the stamps of everything that defines its code.
+type Stamp = Option<Vec<FileStamp>>;
+
+fn file_stamp(p: &Path) -> Option<FileStamp> {
+    let m = std::fs::metadata(p).ok()?;
+    Some((
+        m.dev(),
+        m.ino(),
+        m.size(),
+        m.mtime(),
+        m.mtime_nsec(),
+        m.ctime(),
+        m.ctime_nsec(),
+    ))
+}
+
+fn stamp(p: &Path) -> Stamp {
+    let mut out = vec![file_stamp(p)?];
+    if p.is_dir() {
+        let contents = p.join("Contents");
+        for f in ["Info.plist", "_CodeSignature/CodeResources"] {
+            if let Some(s) = file_stamp(&contents.join(f)) {
+                out.push(s);
+            }
+        }
+        if let Ok(entries) = std::fs::read_dir(contents.join("MacOS")) {
+            let mut files: Vec<_> = entries.flatten().map(|e| e.path()).collect();
+            files.sort();
+            out.extend(files.iter().filter_map(|f| file_stamp(f)));
+        }
+    }
+    Some(out)
 }
 
 #[cfg(test)]
@@ -315,6 +363,25 @@ mod tests {
         assert_eq!(
             for_path(copy.to_str().unwrap()).kind,
             SignatureKind::Invalid
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn replaced_file_is_rechecked() {
+        let dir = std::env::temp_dir().join(format!("vogter-cs-swap-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("tool");
+        let path = p.to_str().unwrap();
+        std::fs::copy("/bin/ls", &p).unwrap();
+        assert_eq!(for_path(path).kind, SignatureKind::Apple);
+        // Swap in a different, unsigned file at the same path.
+        std::fs::remove_file(&p).unwrap();
+        std::fs::write(&p, b"#!/bin/sh\necho hi\n").unwrap();
+        assert_ne!(
+            for_path(path).kind,
+            SignatureKind::Apple,
+            "stale cached verdict"
         );
         std::fs::remove_dir_all(dir).unwrap();
     }
