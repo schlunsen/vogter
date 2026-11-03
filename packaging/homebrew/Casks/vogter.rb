@@ -1,7 +1,6 @@
 cask "vogter" do
   version "0.1.0"
-  # PLACEHOLDER: replace after the v0.1.0 release is published (scripts/release.sh --shas v0.1.0)
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "235fa4c133fc127423579397e606f05dff9f95f3c96b8b74da5bc3091b98998f"
 
   url "https://github.com/schlunsen/vogter/releases/download/v#{version}/Vogter-#{version}-macos-arm64.zip"
   name "Vogter"
@@ -29,14 +28,7 @@ cask "vogter" do
   ]
 
   caveats <<~EOS
-    Vogter.app is ad-hoc signed and not notarized by Apple yet, so Gatekeeper
-    blocks the first launch ("Apple could not verify..."). Either:
-      * open it once, then allow it in System Settings > Privacy & Security >
-        "Open Anyway" (on macOS 14 a right-click > Open also works), or
-      * remove the quarantine flag yourself, after checking you trust the download:
-          xattr -dr com.apple.quarantine /Applications/Vogter.app
-    (Homebrew's old --no-quarantine install flag has been removed, and it did the
-    same thing without asking.)
+    Vogter.app is signed with a Developer ID and notarized by Apple.
 
     The app needs the service running:
       brew services start vogter
