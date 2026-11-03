@@ -40,8 +40,13 @@ DAEMON_ENTITLEMENTS=()
 if [[ "${ENDPOINT_SECURITY:-0}" == 1 ]]; then
     DAEMON_ENTITLEMENTS=(--entitlements "$ROOT/packaging/vogterd.entitlements")
 fi
-codesign --force --options runtime --sign "$IDENTITY" ${DAEMON_ENTITLEMENTS[@]+"${DAEMON_ENTITLEMENTS[@]}"} "$APP/Contents/Helpers/vogterd"
-codesign --force --options runtime --sign "$IDENTITY" "$APP/Contents/Helpers/vogter"
-codesign --force --options runtime --sign "$IDENTITY" "$APP"
+# A real identity gets a secure timestamp (required for notarization); ad-hoc can't have one.
+SIGN_FLAGS=(--force --options runtime --sign "$IDENTITY")
+if [[ "$IDENTITY" != "-" ]]; then
+    SIGN_FLAGS+=(--timestamp)
+fi
+codesign "${SIGN_FLAGS[@]}" ${DAEMON_ENTITLEMENTS[@]+"${DAEMON_ENTITLEMENTS[@]}"} "$APP/Contents/Helpers/vogterd"
+codesign "${SIGN_FLAGS[@]}" "$APP/Contents/Helpers/vogter"
+codesign "${SIGN_FLAGS[@]}" "$APP"
 
 echo "Built $APP"

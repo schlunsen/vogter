@@ -11,7 +11,8 @@
 #   build/dist/Vogter-<version>-macos-<arch>.zip      Vogter.app (built by scripts/build-app.sh)
 #   build/dist/SHA256SUMS
 #
-# SIGN_IDENTITY and ENDPOINT_SECURITY are passed through to scripts/build-app.sh.
+# SIGN_IDENTITY and ENDPOINT_SECURITY are passed through to scripts/build-app.sh;
+# NOTARIZE=1 (with NOTARY_PROFILE) notarizes the app first, see scripts/notarize.sh.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -55,6 +56,11 @@ fi
 if [[ "${SKIP_BUILD:-0}" != 1 ]]; then
     # build-app.sh builds vogter and vogterd in release mode too.
     "$ROOT/scripts/build-app.sh"
+    # NOTARIZE=1: notarize and staple before packaging (needs a Developer ID
+    # SIGN_IDENTITY and saved notarytool credentials, see scripts/notarize.sh).
+    if [[ "${NOTARIZE:-0}" == 1 ]]; then
+        "$ROOT/scripts/notarize.sh" "$ROOT/build/Vogter.app"
+    fi
 fi
 
 APP="$ROOT/build/Vogter.app"
