@@ -11,6 +11,8 @@ final class AppModel {
     var findings: [StoredFinding] = []
     var events: [LoggedEvent] = []
     var trustRules: [TrustRule] = []
+    /// The History tab's state.
+    let history = HistoryModel()
     /// Main window state, so alerts can open it on the right item.
     var selectedTab = "findings"
     var selectedEventID: Int64?
@@ -49,6 +51,7 @@ final class AppModel {
             return
         }
         notifier = Notifier()
+        history.send = { [weak self] in self?.connection?.send($0) }
         notifier?.requestAuthorization()
         self.connect()
         // Status carries live mic/camera state and counts; keep it fresh.
@@ -108,6 +111,35 @@ final class AppModel {
         connection?.send(["type": "untrust", "id": r.id])
         trustRules.removeAll { $0.id == r.id }
         refreshSoon()
+    }
+
+    /// History, filtered to everything about one program.
+    func showInHistory(program path: String) {
+        selectedTab = "history"
+        history.showProgram(path)
+    }
+
+    /// Set (or clear, when blank) the note on an event. Plain text, at most `maxNoteLength`.
+    func annotate(_ e: LoggedEvent, note: String) {
+        let text = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxNoteLength))
+        connection?.send(["type": "annotate", "event_id": e.id, "note": text])
+        applyAnnotation(eventID: e.id, note: text.isEmpty ? nil : text, reviewedAt: e.reviewedAt)
+    }
+
+    func setReviewed(_ e: LoggedEvent, _ reviewed: Bool) {
+        connection?.send(["type": "set_reviewed", "event_id": e.id, "reviewed": reviewed])
+        applyAnnotation(eventID: e.id, note: e.note, reviewedAt: reviewed ? UInt64(Date().timeIntervalSince1970) : nil)
+    }
+
+    /// Matches `MAX_NOTE_CHARS` in crates/vogter-ipc.
+    static let maxNoteLength = 2000
+
+    private func applyAnnotation(eventID: Int64, note: String?, reviewedAt: UInt64?) {
+        if let i = events.firstIndex(where: { $0.id == eventID }) {
+            events[i].note = note
+            events[i].reviewedAt = reviewedAt
+        }
+        history.apply(eventID: eventID, note: note, reviewedAt: reviewedAt)
     }
 
     func reveal(path: String) {
@@ -203,7 +235,12 @@ final class AppModel {
             connection?.send(["type": "trust_rules"])
             connection?.send(["type": "status"])
         case let .error(m): lastError = m
+        case let .annotation(id, note, reviewedAt):
+            applyAnnotation(eventID: id, note: note, reviewedAt: reviewedAt)
+        case .history, .historyDays, .findingHistory, .awayPeriods, .programProfile, .changes:
+            history.handle(msg)
         case let .event(e):
+            history.didReceive(e)
             events.insert(e, at: 0)
             if events.count > 500 { events.removeLast(events.count - 500) }
             notifier?.notify(for: e)

@@ -18,6 +18,7 @@ struct MainWindowContent: View {
     static let tabs: [(id: String, title: String, symbol: String)] = [
         ("findings", "Findings", "shield"),
         ("activity", "Activity", "list.bullet"),
+        ("history", "History", "clock.arrow.circlepath"),
         ("trusted", "Trusted", "hand.thumbsup"),
         ("status", "Status", "gauge"),
     ]
@@ -28,6 +29,7 @@ struct MainWindowContent: View {
             Group {
                 switch selection {
                 case "activity": ActivityTab()
+                case "history": HistoryTab()
                 case "trusted": TrustedTab()
                 case "status": StatusTab()
                 default: FindingsTab()
@@ -41,6 +43,7 @@ struct MainWindowContent: View {
         .fontDesign(.rounded)
         .tint(Theme.sage)
         .zenBackground()
+        .modifier(ProgramProfileSheet())
     }
 }
 
