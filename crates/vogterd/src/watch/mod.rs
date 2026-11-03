@@ -4,6 +4,7 @@
 //! events directly; otherwise the polling fallbacks here cover the same ground
 //! with less fidelity (short-lived processes can be missed).
 
+pub mod browser;
 pub mod fs;
 pub mod procs;
 pub mod session;

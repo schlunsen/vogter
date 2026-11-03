@@ -80,6 +80,8 @@ enum Section {
     Cron,
     Listeners,
     Health,
+    #[value(alias = "browser_extensions")]
+    BrowserExtensions,
 }
 
 fn main() -> Result<()> {
@@ -107,6 +109,7 @@ fn main() -> Result<()> {
                 Some(Section::Cron) => serde_json::to_value(&snap.cron_entries)?,
                 Some(Section::Listeners) => serde_json::to_value(&snap.listeners)?,
                 Some(Section::Health) => serde_json::to_value(&snap.health)?,
+                Some(Section::BrowserExtensions) => serde_json::to_value(&snap.browser_extensions)?,
             };
             println!("{}", serde_json::to_string_pretty(&value)?);
         }

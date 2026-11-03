@@ -1074,6 +1074,7 @@ dependencies = [
  "libproc",
  "plist",
  "rusqlite",
+ "serde_json",
  "sha2",
  "vogter-model",
 ]

@@ -171,6 +171,7 @@ fn start_realtime(tx: mpsc::Sender<watch::Signal>, args: &Args) -> vogter_ipc::R
         Err(e) => tracing::warn!(source = name, "not started: {e}"),
     };
     start("fs_events", watch::fs::spawn(tx.clone()));
+    start("browser_extensions", watch::browser::spawn(tx.clone()));
     if !rt.endpoint_security {
         let every = Duration::from_millis(args.proc_poll_ms);
         start(

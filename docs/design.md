@@ -17,9 +17,10 @@ only *changes* after it alert you. No special entitlement needed:
 | Processes | Code signature (Apple / developer / notarized / ad-hoc / unsigned / broken), deleted executables, runs from temp / Downloads / hidden Library folders |
 | Persistence | LaunchDaemons & LaunchAgents (script runners, fake `com.apple.*` labels, unsigned targets), crontab |
 | Network | Sockets listening on non-loopback addresses, per process |
+| Browser extensions | Chrome, Brave, Edge, Arc, Vivaldi, Chromium, Opera (every profile), Firefox and Safari: where each came from (store, sideloaded, developer mode, policy) and whether it can read every website with powerful permissions |
 | System health | SIP, Gatekeeper, FileVault, firewall, XProtect version, Remote Login (SSH) and Screen Sharing switched on |
 
-`vogter inventory [processes|taps|tcc|launchd|cron|listeners|health]` dumps the raw facts
+`vogter inventory [processes|taps|tcc|launchd|cron|listeners|health|browser-extensions]` dumps the raw facts
 behind these checks as JSON.
 
 ## Realtime
@@ -30,7 +31,7 @@ Between scans, `vogterd` watches live:
   Keychain dumping, `curl … | sh`, hidden base64 payloads, quarantine removal, Gatekeeper
   being turned off, account changes, scripts typing into other apps, unsigned programs in
   temp or Downloads folders. Each alert carries plain-language advice ("What this means").
-- **Startup items** and **permission databases** trigger an immediate rescan when they change (FSEvents).
+- **Startup items**, **permission databases** and **browser extension folders** trigger an immediate rescan when they change (FSEvents).
 - **sudo** (successful and failed), **screen lock and unlock**, and a **"while you were away"**
   summary on unlock listing the alerts and programs that started while the screen was locked.
 - **Microphone and camera**: polled every second; the microphone reports which app uses it.

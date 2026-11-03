@@ -4,6 +4,7 @@
 //! root (and with Full Disk Access) increases visibility.
 
 pub mod av;
+pub mod browser;
 pub mod codesign;
 pub mod eventtap;
 pub mod hash;
@@ -64,6 +65,9 @@ pub fn snapshot() -> Snapshot {
         fail("cron", e, &["persistence.cron"], None);
         Vec::new()
     });
+    let browser_extensions = browser::collect(&mut errs);
+    errs.drain(..)
+        .for_each(|(src, e)| fail("browser", e, &["browser."], Some(src)));
     let health = health::collect();
     for (known, check) in [
         (health.sip_enabled.is_some(), "health.sip"),
@@ -91,5 +95,6 @@ pub fn snapshot() -> Snapshot {
     snap.launch_items = launch_items;
     snap.cron_entries = cron_entries;
     snap.health = health;
+    snap.browser_extensions = browser_extensions;
     snap
 }

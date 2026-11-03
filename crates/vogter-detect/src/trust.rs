@@ -46,6 +46,8 @@ pub fn family(check: &str) -> String {
         "keylogger"
     } else if group("network.") {
         "network"
+    } else if group("browser.") {
+        "browser"
     } else {
         check
     };
@@ -111,7 +113,11 @@ pub fn subject_for(
                 label,
             )
         }
-        (sig, Some(path)) if !sig.is_some_and(|s| s.is_apple()) => {
+        // A folder (an app bundle, a browser extension) has no content hash to
+        // pin, so it falls through to an exact rule below.
+        (sig, Some(path))
+            if !sig.is_some_and(|s| s.is_apple()) && !std::path::Path::new(path).is_dir() =>
+        {
             let sha256 = hash(path);
             let label = match &sha256 {
                 Some(h) => format!("{path} (contents {})", &h[..12]),
