@@ -16,6 +16,7 @@ only *changes* after it alert you. No special entitlement needed:
 | Input Monitoring / Accessibility / Screen Recording / Full Disk / camera / mic grants | TCC databases + code signature of each granted app (needs Full Disk Access) |
 | Processes | Code signature (Apple / developer / notarized / ad-hoc / unsigned / broken), deleted executables, runs from temp / Downloads / hidden Library folders |
 | Persistence | LaunchDaemons & LaunchAgents (script runners, fake `com.apple.*` labels, unsigned targets), crontab |
+| Other footholds | Shell startup files (download-and-run, encoded code, background jobs, programs in temp/Downloads, password dialogs, `sudo`/`ssh` wrappers, `DYLD_INSERT_LIBRARIES`), SSH `authorized_keys`, `/etc/hosts` redirects and blocks, sudoers `NOPASSWD`/`!authenticate`, configuration profiles, login hooks, system and kernel extensions, Background Task Management items. Root only: sudoers, root's SSH keys and login hook, Mac-wide profiles, `sfltool dumpbtm` |
 | Network | Sockets listening on non-loopback addresses, per process |
 | System health | SIP, Gatekeeper, FileVault, firewall, XProtect version, Remote Login (SSH) and Screen Sharing switched on |
 

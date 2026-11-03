@@ -5,6 +5,7 @@
 //! can cross process boundaries (daemon -> app) as JSON.
 
 pub mod redact;
+pub mod takeover;
 
 use serde::{Deserialize, Serialize};
 
@@ -207,6 +208,9 @@ pub struct Snapshot {
     pub cron_entries: Vec<CronEntry>,
     pub listeners: Vec<Listener>,
     pub health: Health,
+    /// Shell startup files, SSH keys, hosts, sudoers, profiles, hooks, extensions.
+    #[serde(default)]
+    pub takeover: takeover::Takeover,
     /// Sensors that failed or ran with reduced visibility.
     pub sensor_errors: Vec<SensorError>,
 }

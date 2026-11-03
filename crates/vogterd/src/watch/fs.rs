@@ -1,4 +1,5 @@
-//! Watch startup-item folders and the permission databases (FSEvents).
+//! Watch startup-item folders, the permission databases and other footholds
+//! (shell startup files, SSH keys, /etc/hosts, sudoers) with FSEvents.
 //! A change triggers an immediate rescan instead of waiting for the timer.
 
 use std::collections::BTreeMap;
@@ -11,6 +12,7 @@ use notify::{EventKind, RecursiveMode, Watcher};
 use vogter_model::{Activity, ActivityKind, Severity};
 
 use super::Signal;
+use super::footholds::Footholds;
 
 /// Wait this long after the last change before acting (installers write in bursts).
 const SETTLE: Duration = Duration::from_secs(2);
@@ -18,7 +20,7 @@ const SETTLE: Duration = Duration::from_secs(2);
 const TCC_MIN_INTERVAL: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum Change {
+pub(super) enum Change {
     Added,
     Changed,
     Removed,
@@ -52,9 +54,13 @@ pub fn spawn(tx: Sender<Signal>) -> Result<(), String> {
             Err(e) => tracing::debug!(dir, "not watching: {e}"),
         }
     }
+    // Shell startup files, SSH keys, /etc/hosts, sudoers.
+    let mut footholds = Footholds::default();
+    watching += footholds.watch_system(&mut watcher);
     let mut home = current_home();
     if let Some(h) = &home {
         watching += watch_user(&mut watcher, h);
+        footholds.watch_user(&mut watcher, h);
     }
     if watching == 0 {
         return Err("no folder could be watched".into());
@@ -75,8 +81,10 @@ pub fn spawn(tx: Sender<Signal>) -> Result<(), String> {
                             let _ = watcher.unwatch(&d);
                         }
                     }
+                    footholds.unwatch_user(&mut watcher);
                     if let Some(new) = &now_home {
                         watch_user(&mut watcher, new);
+                        footholds.watch_user(&mut watcher, new);
                     }
                     tracing::info!(from = ?home, to = ?now_home, "console user changed; watching their folders");
                     home = now_home;
@@ -96,7 +104,9 @@ pub fn spawn(tx: Sender<Signal>) -> Result<(), String> {
                         for path in event.paths {
                             if is_tcc(&path) {
                                 tcc_dirty = true;
-                            } else if path.extension().is_some_and(|e| e == "plist") {
+                            } else if path.extension().is_some_and(|e| e == "plist")
+                                || footholds.classify(&path).is_some()
+                            {
                                 // A create followed by writes is still an addition.
                                 let entry = pending.entry(path).or_insert(change);
                                 if *entry != Change::Added {
@@ -117,7 +127,10 @@ pub fn spawn(tx: Sender<Signal>) -> Result<(), String> {
                             } else {
                                 change
                             };
-                            let _ = tx.send(Signal::Activity(describe(&path, change)));
+                            let activity = footholds
+                                .describe(&path, change)
+                                .unwrap_or_else(|| describe(&path, change));
+                            let _ = tx.send(Signal::Activity(activity));
                             rescan = true;
                         }
                         if tcc_dirty
