@@ -87,6 +87,18 @@ pub fn status() -> Result<()> {
         "microphone: {mic}   camera: {}",
         if s.av.camera_in_use { "ON" } else { "off" }
     );
+    let rt = &s.realtime;
+    println!(
+        "realtime: {}",
+        if rt.sources.is_empty() {
+            "none".into()
+        } else {
+            rt.sources.join(", ")
+        }
+    );
+    if let Some(e) = &rt.endpoint_security_error {
+        println!("  {e}");
+    }
     for e in &s.sensor_errors {
         println!("limited: {e}");
     }
@@ -159,6 +171,13 @@ fn describe(e: &LoggedEvent) -> String {
             finding.finding.title
         ),
         Event::Resolved { title, .. } => format!("gone: {title}"),
+        Event::Activity { activity: a } => {
+            let mut line = format!("[{}] {}", a.severity.as_str(), a.summary);
+            if let Some(d) = &a.detail {
+                line.push_str(&format!("\n      {}", d.replace('\n', "\n      ")));
+            }
+            line
+        }
         Event::MicrophoneOn { clients } => {
             let who: Vec<_> = clients
                 .iter()

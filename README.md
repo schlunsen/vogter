@@ -3,7 +3,7 @@
 A native macOS app that watches your Mac for malware, keyloggers, spying and
 use you didn't intend. Rust backend, SwiftUI front end.
 
-## Status: phase 2: background service and menu bar app
+## Status: phase 3: realtime monitoring
 
 ```sh
 cargo run --release -p vogterd          # the service, as your user (dev mode)
@@ -28,6 +28,22 @@ vogter scan-now
 To run the service as root at boot (sees every process), copy `build/Vogter.app` to
 `/Applications`, run `sudo scripts/install-daemon.sh`, and give
 `/Applications/Vogter.app/Contents/Helpers/vogterd` Full Disk Access.
+
+### Realtime
+
+`vogterd` also watches live, not just every 5 minutes:
+
+- **New programs** are checked at launch: fake password dialogs (`osascript … hidden answer`),
+  Keychain dumping, `curl … | sh`, hidden base64 payloads, quarantine removal, Gatekeeper
+  being turned off, account changes, unsigned programs in temp or Downloads folders.
+- **Startup items** and **permission databases** trigger an immediate rescan when they change.
+- **sudo**, **screen lock and unlock**, and a **"while you were away"** summary on unlock.
+- **Remote Login / Screen Sharing** being switched on shows up as a finding.
+- With **Endpoint Security**, also reads of your Keychain, browser cookies and passwords, SSH/AWS/GPG
+  keys and Messages by programs that shouldn't touch them, plus SSH logins, screen-sharing
+  sessions and XProtect detections. See [docs/endpoint-security.md](docs/endpoint-security.md).
+
+`vogter status` shows which realtime sources are active and, if Endpoint Security is off, why.
 
 ### One-shot scanner
 
@@ -61,9 +77,10 @@ crates/
   vogter-model    shared types: Snapshot (raw facts), Finding, StoredFinding, AvState
   vogter-sensors  gathers facts: codesign, eventtap, tcc, process, network, persistence, health, av
   vogter-detect   rules: Snapshot -> Vec<Finding>, pure and unit-tested
+  vogter-es       Endpoint Security client (two clients: process/session events, secret-file opens)
   vogter-store    SQLite history: active/new/resolved findings, acknowledgements, event log
   vogter-ipc      daemon <-> client protocol (newline-delimited JSON over a Unix socket)
-  vogterd         the service: timed scans, mic/camera watch, socket server with peer checks
+  vogterd         the service: timed scans, realtime watchers, mic/camera, socket server
   vogter-cli      the `vogter` binary: one-shot scans and a client for vogterd
 app/              SwiftUI menu bar app (SwiftPM; `swift test` checks protocol decoding)
 packaging/        LaunchDaemon plist
@@ -74,18 +91,15 @@ Socket security: only root, the service's own user, or the user at the console m
 When the service is signed with a Developer ID, peers must also be signed by the same team
 (checked by audit token, not PID).
 
-Planned: `vogter-es` (Endpoint Security client).
 
 ## Roadmap
 
 1. **Scanner** (done): one-shot `vogter scan`.
 2. **Service and app** (done): timed scans with history, change alerts, mic/camera alerts
    (mic names the app; camera doesn't yet), menu bar app.
-3. **Endpoint Security** (realtime): program launches with signing info, reads of sensitive
-   files (Keychain, browser cookies and logins, `~/.ssh`, Messages), new background/login items,
-   permission changes, logins, screen sharing, `sudo`, lock/unlock ("what happened while I was
-   away"). Needs Apple's `com.apple.developer.endpoint-security.client` entitlement; until it's
-   granted, develop in a macOS VM with SIP disabled.
+3. **Realtime** (done): live program checks, startup and permission folder watching, sudo,
+   lock/unlock with an away summary. The Endpoint Security client is built. Testing it on a real Mac
+   needs Apple's entitlement, or a VM with SIP off (see docs/endpoint-security.md).
 4. **Detection quality**: allowlists, learning what's normal for this Mac, Sigma rules via
    `rsigma-eval`, YARA scanning of new binaries via `yara-x`.
 5. **Later**: Network Extension (Swift) for per-app network control, notarized releases.

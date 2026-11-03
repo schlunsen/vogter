@@ -319,6 +319,10 @@ pub struct Health {
     pub filevault_enabled: Option<bool>,
     pub firewall_enabled: Option<bool>,
     pub xprotect_version: Option<String>,
+    /// Remote Login (SSH) is accepting connections.
+    pub remote_login: Option<bool>,
+    /// Screen Sharing / Remote Management is accepting connections.
+    pub screen_sharing: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -353,4 +357,99 @@ pub struct AvState {
     /// Who is using the microphone (macOS 14+).
     pub microphone_clients: Vec<AudioClient>,
     pub camera_in_use: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Live activity
+// ---------------------------------------------------------------------------
+
+/// A program that just started, with what we know about it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExecInfo {
+    pub pid: i32,
+    pub ppid: i32,
+    pub uid: u32,
+    pub path: String,
+    pub args: Vec<String>,
+    pub signing: Signing,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_path: Option<String>,
+}
+
+impl ExecInfo {
+    pub fn name(&self) -> &str {
+        self.path.rsplit('/').next().unwrap_or(&self.path)
+    }
+
+    pub fn command_line(&self) -> String {
+        if self.args.is_empty() {
+            self.path.clone()
+        } else {
+            self.args.join(" ")
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActivityKind {
+    ProcessStarted,
+    SensitiveFileRead,
+    PersistenceChanged,
+    PermissionChanged,
+    Sudo,
+    RemoteLogin,
+    ScreenSharing,
+    ScreenLocked,
+    ScreenUnlocked,
+    /// Apple's XProtect found malware.
+    MalwareDetected,
+    /// Summary of what happened while the screen was locked.
+    AwaySummary,
+}
+
+/// Something that happened, as opposed to a [`Finding`] (a state that exists).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Activity {
+    pub kind: ActivityKind,
+    pub severity: Severity,
+    pub summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pid: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub process: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signing: Option<Signing>,
+}
+
+impl Activity {
+    pub fn new(kind: ActivityKind, severity: Severity, summary: impl Into<String>) -> Self {
+        Activity {
+            kind,
+            severity,
+            summary: summary.into(),
+            detail: None,
+            pid: None,
+            process: None,
+            path: None,
+            signing: None,
+        }
+    }
+
+    pub fn detail(mut self, d: impl Into<String>) -> Self {
+        self.detail = Some(d.into());
+        self
+    }
+
+    pub fn from_exec(mut self, e: &ExecInfo) -> Self {
+        self.pid = Some(e.pid);
+        self.process = Some(e.name().to_string());
+        self.path = Some(e.path.clone());
+        self.signing = Some(e.signing.clone());
+        self
+    }
 }

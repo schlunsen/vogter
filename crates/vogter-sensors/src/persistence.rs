@@ -85,10 +85,23 @@ fn parse(kind: LaunchKind, path: &Path) -> Result<LaunchItem, String> {
     })
 }
 
-/// The current user's crontab (other users' need root).
+/// The watched user's crontab (as root, also root's own).
 pub fn cron() -> Vec<CronEntry> {
-    let user = std::env::var("USER").unwrap_or_default();
-    let Ok(out) = Command::new("/usr/bin/crontab").arg("-l").output() else {
+    let mut users: Vec<String> = crate::user::target().map(|u| u.name).into_iter().collect();
+    if crate::user::is_root() {
+        users.push("root".into());
+    }
+    users.dedup();
+    users.into_iter().flat_map(crontab).collect()
+}
+
+fn crontab(user: String) -> Vec<CronEntry> {
+    let mut cmd = Command::new("/usr/bin/crontab");
+    if crate::user::is_root() {
+        cmd.args(["-u", &user]);
+    }
+    cmd.arg("-l");
+    let Ok(out) = cmd.output() else {
         return Vec::new();
     };
     String::from_utf8_lossy(&out.stdout)

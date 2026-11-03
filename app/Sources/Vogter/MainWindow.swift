@@ -46,10 +46,18 @@ private struct ActivityTab: View {
 
     var body: some View {
         List(model.events) { e in
-            HStack {
-                Image(systemName: e.symbol).frame(width: 20)
-                Text(e.text)
+            HStack(alignment: .top) {
+                Image(systemName: e.symbol)
+                    .frame(width: 20)
+                    .foregroundStyle(e.severity.map(\.color) ?? .secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(e.text)
+                    if let d = e.detail {
+                        Text(d).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    }
+                }
                 Spacer()
+                if let sev = e.severity, sev > .info { SeverityBadge(severity: sev) }
                 Text(Date(timeIntervalSince1970: TimeInterval(e.at)), style: .time)
                     .foregroundStyle(.secondary)
                     .font(.caption)
@@ -68,6 +76,13 @@ private struct StatusTab: View {
                 LabeledContent("Socket", value: model.socketPath ?? "-")
                 LabeledContent("Scan interval", value: "\(s.scanIntervalSecs) s")
                 if let last = s.lastScan { LabeledContent("Last scan", value: relativeTime(last)) }
+                if let rt = s.realtime {
+                    LabeledContent("Realtime", value: rt.sources.joined(separator: ", "))
+                    LabeledContent("Endpoint Security", value: rt.endpointSecurity ? "active" : "off")
+                    if let err = rt.endpointSecurityError {
+                        Text(err).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    }
+                }
                 LabeledContent("Microphone", value: s.av.microphoneInUse ? "in use" : "off")
                 LabeledContent("Camera", value: s.av.cameraInUse ? "in use" : "off")
                 Section("Limited visibility") {

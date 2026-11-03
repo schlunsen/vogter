@@ -25,8 +25,14 @@ unsafe extern "C" {
 
 pub fn collect(errors: &mut Vec<String>) -> Vec<TccGrant> {
     let mut grants = Vec::new();
-    let user_db = std::env::var("HOME")
-        .map(|h| format!("{h}/Library/Application Support/com.apple.TCC/TCC.db"));
+    let user_db = crate::user::target()
+        .map(|u| {
+            format!(
+                "{}/Library/Application Support/com.apple.TCC/TCC.db",
+                u.home
+            )
+        })
+        .ok_or(());
     let dbs = [
         (TccScope::System, Ok(SYSTEM_DB.to_string())),
         (TccScope::User, user_db),

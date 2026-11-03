@@ -1,0 +1,13 @@
+[package]
+name = "vogter-es"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+endpoint-sec = { version = "0.6.2", features = ["macos_14_0_0", "macos_15_4_0"] }
+tracing = "0.1.44"
+vogter-detect = { version = "0.1.0", path = "../vogter-detect" }
+vogter-model = { version = "0.1.0", path = "../vogter-model" }
+vogter-sensors = { version = "0.1.0", path = "../vogter-sensors" }

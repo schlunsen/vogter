@@ -11,6 +11,7 @@ pub mod network;
 pub mod persistence;
 pub mod process;
 pub mod tcc;
+pub mod user;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 use vogter_model::{SensorError, Snapshot};

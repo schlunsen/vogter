@@ -16,6 +16,10 @@ struct MenuView: View {
                     VStack(alignment: .leading, spacing: 4) { LiveIndicators(av: av) }
                     Divider()
                 }
+                if !model.recentAlerts.isEmpty {
+                    recentAlerts
+                    Divider()
+                }
                 findingsList
             }
             Divider()
@@ -55,6 +59,21 @@ struct MenuView: View {
         if s.scanning { return "Scanning…" }
         guard let last = s.lastScan else { return "Waiting for first scan" }
         return "Last scan \(relativeTime(last)) · every \(s.scanIntervalSecs / 60) min"
+    }
+
+    private var recentAlerts: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Recent alerts").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+            ForEach(model.recentAlerts.prefix(4)) { e in
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: e.symbol).foregroundStyle(e.severity?.color ?? .secondary).frame(width: 16)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(e.text).font(.callout).lineLimit(2)
+                        Text(relativeTime(e.at)).font(.caption2).foregroundStyle(.tertiary)
+                    }
+                }
+            }
+        }
     }
 
     @ViewBuilder private var findingsList: some View {

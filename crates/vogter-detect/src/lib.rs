@@ -4,6 +4,12 @@
 //! seen and why it matters. Severity leans on code signing, because on macOS
 //! "who vouches for this code" is the strongest cheap signal available.
 
+mod exec;
+mod files;
+
+pub use exec::assess_exec;
+pub use files::{SensitiveArea, assess_file_read, sensitive_areas};
+
 use vogter_model::{
     Category, EventTap, Finding, LaunchItem, LaunchKind, ProcessInfo, Severity, SignatureKind,
     Snapshot, TccGrant,
@@ -226,7 +232,7 @@ fn tcc_grant(g: &TccGrant) -> Option<Finding> {
 // Processes
 // ---------------------------------------------------------------------------
 
-fn process(p: &ProcessInfo) -> Option<Finding> {
+pub(crate) fn process(p: &ProcessInfo) -> Option<Finding> {
     let path = p.path.as_deref()?;
     let base = |severity, check: &str, title: String, detail: String| Finding {
         severity,
@@ -302,7 +308,7 @@ fn process(p: &ProcessInfo) -> Option<Finding> {
 // Persistence
 // ---------------------------------------------------------------------------
 
-const INTERPRETERS: &[&str] = &[
+pub(crate) const INTERPRETERS: &[&str] = &[
     "sh",
     "bash",
     "zsh",
@@ -432,9 +438,31 @@ fn health(snap: &Snapshot) -> Vec<Finding> {
             "Incoming connections to apps are not filtered.",
         ),
     ];
+    // These are bad when *on*.
+    let exposures = [
+        (
+            h.remote_login,
+            Severity::Medium,
+            "health.remote_login",
+            "Remote Login (SSH) is on",
+            "Anyone with a password for this Mac can log in over the network. Turn it off in System Settings → General → Sharing unless you use it.",
+        ),
+        (
+            h.screen_sharing,
+            Severity::Medium,
+            "health.screen_sharing",
+            "Screen Sharing is on",
+            "This Mac's screen can be viewed and controlled over the network. Turn it off in System Settings → General → Sharing unless you use it.",
+        ),
+    ];
     checks
         .into_iter()
         .filter(|(state, ..)| *state == Some(false))
+        .chain(
+            exposures
+                .into_iter()
+                .filter(|(state, ..)| *state == Some(true)),
+        )
         .map(|(_, severity, check, title, detail)| Finding {
             severity,
             category: Category::SystemHealth,
@@ -453,7 +481,7 @@ fn health(snap: &Snapshot) -> Vec<Finding> {
 // ---------------------------------------------------------------------------
 
 /// Places malware likes to run from and legit software rarely does.
-fn suspicious_location(path: &str) -> Option<&'static str> {
+pub(crate) fn suspicious_location(path: &str) -> Option<&'static str> {
     const TEMP: &[&str] = &["/tmp/", "/private/tmp/", "/var/tmp/", "/private/var/tmp/"];
     if TEMP.iter().any(|t| path.starts_with(t)) {
         return Some("a temp folder");

@@ -81,6 +81,18 @@ pub struct Status {
     pub av: AvState,
     /// Sensors with reduced visibility in the last scan.
     pub sensor_errors: Vec<String>,
+    pub realtime: Realtime,
+}
+
+/// Which live sources are running.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Realtime {
+    pub endpoint_security: bool,
+    /// Why Endpoint Security is off, when it is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint_security_error: Option<String>,
+    /// Names of active watchers, e.g. `process_poll`, `fs_events`.
+    pub sources: Vec<String>,
 }
 
 /// Something that happened, with its time and a database id.
@@ -109,6 +121,10 @@ pub enum Event {
     Resolved {
         key: String,
         title: String,
+    },
+    /// Something happened: a suspicious program started, a secret was read, sudo was used...
+    Activity {
+        activity: vogter_model::Activity,
     },
     MicrophoneOn {
         clients: Vec<vogter_model::AudioClient>,

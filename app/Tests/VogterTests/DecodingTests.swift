@@ -49,6 +49,29 @@ final class DecodingTests: XCTestCase {
         XCTAssertEqual(f.signing?.summary, "ad-hoc signed (no identity)")
     }
 
+    func testRealtimeStatus() throws {
+        guard case let .status(s) = try decode(fixture("status")) else { return XCTFail("not status") }
+        let rt = try XCTUnwrap(s.realtime)
+        XCTAssertFalse(rt.endpointSecurity)
+        XCTAssertTrue(rt.sources.contains("process_poll"))
+    }
+
+    func testActivityEventsFromDaemon() throws {
+        guard case let .events(e) = try decode(fixture("events")) else { return XCTFail("not events") }
+        let activities = e.compactMap { if case let .activity(a) = $0.kind { a } else { nil } }
+        XCTAssertFalse(activities.isEmpty)
+        XCTAssertTrue(activities.contains { $0.kind == "sudo" })
+        XCTAssertTrue(activities.contains { $0.kind == "process_started" && $0.severity >= .high })
+    }
+
+    func testAwaySummary() throws {
+        let json = #"{"type":"event","id":3,"at":1,"kind":"activity","activity":{"kind":"away_summary","severity":"medium","summary":"While you were away (2h 0m): 1 alert, 0 programs started","detail":"[medium] Failed sudo by x"}}"#
+        guard case let .event(e) = try decode(json), case let .activity(a) = e.kind else { return XCTFail() }
+        XCTAssertEqual(a.kind, "away_summary")
+        XCTAssertEqual(e.symbol, "figure.walk.departure")
+        XCTAssertEqual(e.severity, .medium)
+    }
+
     func testUnknownTypesDoNotThrow() throws {
         guard case .unknown("future") = try decode(#"{"type":"future"}"#) else { return XCTFail() }
     }

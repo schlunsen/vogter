@@ -34,6 +34,15 @@ final class AppModel {
         findings.filter { showInfo || $0.severity > .info }
     }
 
+    /// Medium-or-worse activity from the last 24 hours, newest first.
+    var recentAlerts: [LoggedEvent] {
+        let since = UInt64(Date().timeIntervalSince1970) - 86_400
+        return events.filter { e in
+            guard e.at >= since, let sev = e.severity, sev >= .medium, case .activity = e.kind else { return false }
+            return true
+        }
+    }
+
     /// Highest severity among open findings, ignoring info.
     var worst: Severity? {
         findings.map(\.severity).filter { $0 > .info }.max()

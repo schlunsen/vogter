@@ -7,6 +7,7 @@
 
 mod daemon;
 mod server;
+mod watch;
 
 use std::path::PathBuf;
 use std::sync::{Arc, mpsc};
@@ -33,6 +34,12 @@ struct Args {
     /// Milliseconds between microphone/camera checks.
     #[arg(long, default_value_t = 1000)]
     av_poll_ms: u64,
+    /// Milliseconds between new-process checks (fallback watcher, without Endpoint Security).
+    #[arg(long, default_value_t = 1000)]
+    proc_poll_ms: u64,
+    /// Don't try Endpoint Security, use the fallback watchers.
+    #[arg(long)]
+    no_endpoint_security: bool,
 }
 
 fn main() -> Result<()> {
@@ -49,14 +56,17 @@ fn main() -> Result<()> {
     };
     std::fs::create_dir_all(&data_dir)
         .with_context(|| format!("creating {}", data_dir.display()))?;
-    let socket = args.socket.unwrap_or_else(|| {
+    let socket = args.socket.clone().unwrap_or_else(|| {
         if as_root {
             PathBuf::from(vogter_ipc::SYSTEM_SOCKET)
         } else {
             data_dir.join("vogter.sock")
         }
     });
-    let db = args.db.unwrap_or_else(|| data_dir.join("vogter.db"));
+    let db = args
+        .db
+        .clone()
+        .unwrap_or_else(|| data_dir.join("vogter.db"));
 
     let store = Store::open(&db).with_context(|| format!("opening {}", db.display()))?;
     let (scan_tx, scan_rx) = mpsc::channel();
@@ -78,5 +88,56 @@ fn main() -> Result<()> {
         .name("av".into())
         .spawn(move || d.av_loop(poll))?;
 
+    let (signal_tx, signal_rx) = mpsc::channel();
+    let d = daemon.clone();
+    thread::Builder::new()
+        .name("signals".into())
+        .spawn(move || d.signal_loop(signal_rx))?;
+    daemon.set_realtime(start_realtime(signal_tx, &args));
+
     server::run(&socket, daemon)
+}
+
+/// Start live sources: Endpoint Security when possible, polling fallbacks otherwise.
+fn start_realtime(tx: mpsc::Sender<watch::Signal>, args: &Args) -> vogter_ipc::Realtime {
+    let home = vogter_sensors::user::target().map(|u| u.home);
+    let mut rt = vogter_ipc::Realtime::default();
+
+    if args.no_endpoint_security {
+        rt.endpoint_security_error = Some("disabled with --no-endpoint-security".into());
+    } else {
+        let (es_tx, es_rx) = mpsc::channel::<vogter_es::EsEvent>();
+        match vogter_es::start(home.as_deref().unwrap_or("/var/empty"), es_tx) {
+            Ok(()) => {
+                let tx = tx.clone();
+                thread::spawn(move || es_rx.into_iter().for_each(|e| drop(tx.send(e.into()))));
+                rt.endpoint_security = true;
+                rt.sources.push("endpoint_security".into());
+            }
+            Err(e) => {
+                tracing::warn!("{e}; using fallback watchers");
+                rt.endpoint_security_error = Some(e);
+            }
+        }
+    }
+
+    let mut start = |name: &str, result: Result<(), String>| match result {
+        Ok(()) => rt.sources.push(name.into()),
+        Err(e) => tracing::warn!(source = name, "not started: {e}"),
+    };
+    start("fs_events", watch::fs::spawn(tx.clone(), home));
+    if !rt.endpoint_security {
+        let every = Duration::from_millis(args.proc_poll_ms);
+        start(
+            "process_poll",
+            watch::procs::spawn(tx.clone(), every).map_err(|e| e.to_string()),
+        );
+        start("session_notify", watch::session::spawn(tx.clone()));
+        start(
+            "sudo_log",
+            watch::sudo::spawn(tx).map_err(|e| e.to_string()),
+        );
+    }
+    tracing::info!(sources = ?rt.sources, "realtime sources");
+    rt
 }

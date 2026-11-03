@@ -62,6 +62,23 @@ struct AvState: Codable, Hashable {
     var cameraInUse: Bool
 }
 
+struct Activity: Codable, Hashable {
+    var kind: String
+    var severity: Severity
+    var summary: String
+    var detail: String?
+    var pid: Int32?
+    var process: String?
+    var path: String?
+    var signing: Signing?
+}
+
+struct Realtime: Codable, Hashable {
+    var endpointSecurity: Bool
+    var endpointSecurityError: String?
+    var sources: [String]
+}
+
 struct DaemonStatus: Codable {
     var `protocol`: Int
     var version: String
@@ -73,12 +90,14 @@ struct DaemonStatus: Codable {
     var openCounts: [UInt32]
     var av: AvState
     var sensorErrors: [String]
+    var realtime: Realtime?
 }
 
 enum EventKind: Hashable {
     case scanCompleted(findings: Int, new: Int, resolved: Int, baseline: Bool)
     case newFinding(StoredFinding)
     case resolved(key: String, title: String)
+    case activity(Activity)
     case microphoneOn([AudioClient])
     case microphoneOff
     case cameraOn
@@ -92,7 +111,7 @@ struct LoggedEvent: Decodable, Identifiable, Hashable {
     var kind: EventKind
 
     private enum Keys: String, CodingKey {
-        case id, at, kind, findings, new, resolved, baseline, finding, key, title, clients
+        case id, at, kind, findings, new, resolved, baseline, finding, key, title, clients, activity
     }
 
     init(from decoder: Decoder) throws {
@@ -109,6 +128,7 @@ struct LoggedEvent: Decodable, Identifiable, Hashable {
         case "new_finding": kind = .newFinding(try c.decode(StoredFinding.self, forKey: .finding))
         case "resolved":
             kind = .resolved(key: try c.decode(String.self, forKey: .key), title: try c.decode(String.self, forKey: .title))
+        case "activity": kind = .activity(try c.decode(Activity.self, forKey: .activity))
         case "microphone_on": kind = .microphoneOn(try c.decode([AudioClient].self, forKey: .clients))
         case "microphone_off": kind = .microphoneOff
         case "camera_on": kind = .cameraOn
@@ -124,6 +144,7 @@ struct LoggedEvent: Decodable, Identifiable, Hashable {
                 : "Scan: \(new) new, \(resolved) gone (\(findings) total)"
         case let .newFinding(f): return "New: \(f.title)"
         case let .resolved(_, title): return "Gone: \(title)"
+        case let .activity(a): return a.summary
         case let .microphoneOn(clients):
             let who = clients.map(\.name).joined(separator: ", ")
             return "Microphone on" + (who.isEmpty ? "" : " — \(who)")
@@ -134,11 +155,39 @@ struct LoggedEvent: Decodable, Identifiable, Hashable {
         }
     }
 
+    /// Severity for display; nil for plain status events.
+    var severity: Severity? {
+        switch kind {
+        case let .activity(a): return a.severity
+        case let .newFinding(f): return f.severity
+        default: return nil
+        }
+    }
+
+    var detail: String? {
+        if case let .activity(a) = kind { return a.detail }
+        return nil
+    }
+
     var symbol: String {
         switch kind {
         case .scanCompleted: return "magnifyingglass"
         case .newFinding: return "exclamationmark.triangle"
         case .resolved: return "checkmark.circle"
+        case let .activity(a):
+            switch a.kind {
+            case "process_started": return "terminal"
+            case "sensitive_file_read": return "key.fill"
+            case "persistence_changed": return "arrow.clockwise.circle"
+            case "permission_changed": return "hand.raised"
+            case "sudo": return "lock.open"
+            case "remote_login", "screen_sharing": return "network"
+            case "screen_locked": return "lock"
+            case "screen_unlocked": return "lock.open.display"
+            case "malware_detected": return "ladybug.fill"
+            case "away_summary": return "figure.walk.departure"
+            default: return "bolt"
+            }
         case .microphoneOn: return "mic.fill"
         case .microphoneOff: return "mic.slash"
         case .cameraOn: return "video.fill"

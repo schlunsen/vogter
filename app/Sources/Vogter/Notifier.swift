@@ -20,6 +20,13 @@ final class Notifier {
             content.title = "\(f.severity.label): \(f.title)"
             content.body = f.detail
             content.sound = f.severity >= .high ? .default : nil
+        case let .activity(a) where a.kind == "away_summary" && a.severity > .info:
+            content.title = a.summary
+            content.body = a.detail ?? ""
+        case let .activity(a) where a.severity >= minimumSeverity:
+            content.title = "\(a.severity.label): \(a.summary)"
+            content.body = a.detail ?? ""
+            content.sound = a.severity >= .high ? .default : nil
         case let .microphoneOn(clients):
             content.title = "Microphone is on"
             let who = clients.map(\.name).joined(separator: ", ")
