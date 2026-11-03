@@ -1,6 +1,6 @@
 cask "vogter" do
-  version "0.1.0"
-  sha256 "235fa4c133fc127423579397e606f05dff9f95f3c96b8b74da5bc3091b98998f"
+  version "0.1.1"
+  sha256 "0e90944d8f502905ebe0bc5d102a33e7fca03405a9223cd41333f3da80e780a7"
 
   url "https://github.com/schlunsen/vogter/releases/download/v#{version}/Vogter-#{version}-macos-arm64.zip"
   name "Vogter"

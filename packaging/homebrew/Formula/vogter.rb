@@ -1,8 +1,8 @@
 class Vogter < Formula
   desc "Watches your Mac for malware, keyloggers and spying"
   homepage "https://github.com/schlunsen/vogter"
-  url "https://github.com/schlunsen/vogter/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "8629863f988df50fcc940fde2c986fbf763ee9f1902a940a0d6f928865b15df5"
+  url "https://github.com/schlunsen/vogter/archive/refs/tags/v0.1.1.tar.gz"
+  sha256 "f8ed2a2f87f0421ab4c196aac25281c6e7a0b3ba2c3b413754c48b51c6b6dfb1"
   license "Apache-2.0"
   head "https://github.com/schlunsen/vogter.git", branch: "main"
 
