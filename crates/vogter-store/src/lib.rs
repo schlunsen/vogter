@@ -8,6 +8,11 @@ use rusqlite::{Connection, OptionalExtension, params};
 use vogter_ipc::{Event, LoggedEvent};
 use vogter_model::{Finding, Severity, StoredFinding, TrustRule, TrustSubject};
 
+mod history;
+pub use history::{
+    Cleanup, EVENT_RETENTION_SECS, INFO_EVENT_RETENTION_SECS, RESOLVED_FINDING_RETENTION_SECS,
+};
+
 pub type Result<T> = rusqlite::Result<T>;
 
 pub struct Store {
@@ -85,6 +90,8 @@ impl Store {
     fn init(conn: Connection) -> Result<Self> {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.execute_batch(SCHEMA)?;
+        // Additions since 0.1.1; all idempotent, so older databases upgrade in place.
+        conn.execute_batch(history::SCHEMA)?;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -207,21 +214,11 @@ impl Store {
 
     pub fn event(&self, id: i64) -> Result<Option<LoggedEvent>> {
         self.conn
-            .query_row("SELECT id, at, data FROM events WHERE id = ?1", [id], |r| {
-                let data: String = r.get(2)?;
-                let event = serde_json::from_str(&data).map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        2,
-                        rusqlite::types::Type::Text,
-                        e.into(),
-                    )
-                })?;
-                Ok(LoggedEvent {
-                    id: r.get(0)?,
-                    at: r.get(1)?,
-                    event,
-                })
-            })
+            .query_row(
+                &format!("{} WHERE events.id = ?1", history::EVENT_SELECT),
+                [id],
+                history::row_to_event,
+            )
             .optional()
     }
 
@@ -279,13 +276,16 @@ impl Store {
                     first_seen: at,
                     last_seen: at,
                     acknowledged: false,
+                    resolved_at: None,
                 });
             }
         }
 
         // Whatever is left in `active` wasn't seen in this scan.
         for key in active {
-            let Some(sf) = load(&tx, &key)? else { continue };
+            let Some(mut sf) = load(&tx, &key)? else {
+                continue;
+            };
             if unknown(&sf.finding) {
                 diff.kept_unknown += 1;
                 continue;
@@ -294,6 +294,7 @@ impl Store {
                 "UPDATE findings SET resolved_at = ?2 WHERE key = ?1",
                 params![key, at],
             )?;
+            sf.resolved_at = Some(at);
             diff.resolved.push(sf);
         }
 
@@ -313,7 +314,7 @@ impl Store {
     /// Active findings, most severe first.
     pub fn active(&self, include_acknowledged: bool) -> Result<Vec<StoredFinding>> {
         let mut stmt = self.conn.prepare(
-            "SELECT key, data, first_seen, last_seen, acknowledged FROM findings
+            "SELECT key, data, first_seen, last_seen, acknowledged, resolved_at FROM findings
              WHERE resolved_at IS NULL AND (?1 OR acknowledged = 0)
              ORDER BY severity DESC, first_seen DESC",
         )?;
@@ -341,36 +342,23 @@ impl Store {
             "INSERT INTO events (at, data) VALUES (?1, ?2)",
             params![at, data],
         )?;
-        Ok(LoggedEvent {
-            id: self.conn.last_insert_rowid(),
-            at,
-            event,
-        })
+        Ok(LoggedEvent::new(self.conn.last_insert_rowid(), at, event))
     }
 
     /// Newest first.
     pub fn recent_events(&self, limit: u32) -> Result<Vec<LoggedEvent>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT id, at, data FROM events ORDER BY id DESC LIMIT ?1")?;
-        let rows = stmt.query_map([limit], |r| {
-            let data: String = r.get(2)?;
-            let event = serde_json::from_str(&data).map_err(|e| {
-                rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, e.into())
-            })?;
-            Ok(LoggedEvent {
-                id: r.get(0)?,
-                at: r.get(1)?,
-                event,
-            })
-        })?;
+        let mut stmt = self.conn.prepare(&format!(
+            "{} ORDER BY events.id DESC LIMIT ?1",
+            history::EVENT_SELECT
+        ))?;
+        let rows = stmt.query_map([limit], history::row_to_event)?;
         rows.collect()
     }
 }
 
 fn load(conn: &Connection, key: &str) -> Result<Option<StoredFinding>> {
     conn.query_row(
-        "SELECT key, data, first_seen, last_seen, acknowledged FROM findings WHERE key = ?1",
+        "SELECT key, data, first_seen, last_seen, acknowledged, resolved_at FROM findings WHERE key = ?1",
         [key],
         row_to_stored,
     )
@@ -388,6 +376,7 @@ fn row_to_stored(r: &rusqlite::Row) -> Result<StoredFinding> {
         first_seen: r.get(2)?,
         last_seen: r.get(3)?,
         acknowledged: r.get(4)?,
+        resolved_at: r.get(5)?,
     })
 }
 

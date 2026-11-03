@@ -3,7 +3,7 @@
 # (app/Sources/Vogter/Demo.swift). Draws the app's real views offscreen: no daemon,
 # no Screen Recording permission, nothing from this Mac ends up in the images.
 #
-#   scripts/screenshots.sh            # docs/images/{menu,findings,activity,trusted,status,hero}-{light,dark}.png
+#   scripts/screenshots.sh            # docs/images/{menu,findings,activity,history,changes,program,trusted,status,hero}-{light,dark}.png
 #   scripts/screenshots.sh out/dir    # somewhere else
 set -euo pipefail
 
@@ -44,7 +44,7 @@ def flatten(img):
                 rgb[a:b] = bytes(fill) * n
     return Image.frombytes("RGB", (w, h), bytes(rgb))
 
-names = ("menu-", "findings-", "activity-", "trusted-", "status-", "hero-")
+names = ("menu-", "findings-", "activity-", "history-", "changes-", "program-", "trusted-", "status-", "hero-")
 for path in sorted(glob.glob(os.path.join(sys.argv[1], "*.png"))):
     if not os.path.basename(path).startswith(names):
         continue

@@ -39,6 +39,15 @@ enum Screenshots {
             if let main = windows["activity"] {
                 ok = save(hero(window: main, menu: menu, scheme: scheme), dir, "hero-\(suffix).png") && ok
             }
+
+            // History: "What changed", and the "Who is this?" program profile.
+            let changesModel = Demo.model()
+            changesModel.history.mode = .changes
+            let changes = capture(ScreenshotWindow(tab: "history").environment(changesModel), size: windowSize, scheme: scheme, titled: true)
+            ok = save(framed(changes, scheme: scheme, cornerRadius: 12), dir, "changes-\(suffix).png") && ok
+            let profileView = ProgramProfileView().environment(Demo.model()).frame(width: 560, height: 620).zenBackground()
+            let profile = capture(profileView, size: CGSize(width: 560, height: 620), scheme: scheme, titled: false)
+            ok = save(framed(profile, scheme: scheme, cornerRadius: 12), dir, "program-\(suffix).png") && ok
         }
         return ok
     }
