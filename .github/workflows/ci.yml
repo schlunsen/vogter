@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  build-test:
+    name: Rust + Swift (macOS arm64)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      # The workspace uses edition 2024 and let-chains, so it needs a recent stable.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Toolchain versions
+        run: |
+          rustc --version
+          cargo --version
+          swift --version
+          sw_vers
+
+      - name: cargo fmt
+        run: cargo fmt --all --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace
+
+      - name: swift test
+        run: swift test --package-path app
+
+      - name: Build Vogter.app (ad-hoc signed)
+        run: scripts/build-app.sh
+
+      - name: Smoke test the bundle
+        run: |
+          codesign --verify --deep --strict --verbose=2 build/Vogter.app
+          build/Vogter.app/Contents/Helpers/vogter --version
+          build/Vogter.app/Contents/Helpers/vogterd --version
