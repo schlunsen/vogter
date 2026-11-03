@@ -75,6 +75,19 @@ pub struct Finding {
     pub signing: Option<Signing>,
 }
 
+impl Finding {
+    /// Identity across scans: the same problem on the same thing gets the same
+    /// key, so we can tell "new" from "still there". PIDs are left out on purpose.
+    pub fn key(&self) -> String {
+        format!(
+            "{}|{}|{}",
+            self.check,
+            self.path.as_deref().unwrap_or(""),
+            self.title
+        )
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Code signing
 // ---------------------------------------------------------------------------
@@ -306,4 +319,38 @@ pub struct Health {
     pub filevault_enabled: Option<bool>,
     pub firewall_enabled: Option<bool>,
     pub xprotect_version: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// History and live state (daemon)
+// ---------------------------------------------------------------------------
+
+/// A finding as tracked across scans by the daemon.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StoredFinding {
+    pub key: String,
+    #[serde(flatten)]
+    pub finding: Finding,
+    /// Unix seconds.
+    pub first_seen: u64,
+    pub last_seen: u64,
+    /// The user said "I know about this one".
+    pub acknowledged: bool,
+}
+
+/// A process currently recording from an audio input.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AudioClient {
+    pub pid: i32,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bundle_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AvState {
+    pub microphone_in_use: bool,
+    /// Who is using the microphone (macOS 14+).
+    pub microphone_clients: Vec<AudioClient>,
+    pub camera_in_use: bool,
 }

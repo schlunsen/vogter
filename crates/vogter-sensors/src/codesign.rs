@@ -9,6 +9,7 @@ use std::ffi::c_void;
 use std::sync::{Mutex, OnceLock};
 
 use core_foundation::base::{CFType, CFTypeRef, OSStatus, TCFType};
+use core_foundation::data::CFData;
 use core_foundation::dictionary::{CFDictionary, CFDictionaryRef};
 use core_foundation::number::CFNumber;
 use core_foundation::string::{CFString, CFStringRef};
@@ -30,6 +31,7 @@ const SIG_FLAG_ADHOC: i64 = 0x2;
 #[link(name = "Security", kind = "framework")]
 unsafe extern "C" {
     static kSecGuestAttributePid: CFStringRef;
+    static kSecGuestAttributeAudit: CFStringRef;
     static kSecCodeInfoIdentifier: CFStringRef;
     static kSecCodeInfoTeamIdentifier: CFStringRef;
     static kSecCodeInfoFlags: CFStringRef;
@@ -201,8 +203,25 @@ impl Code {
 pub fn for_pid(pid: i32, path: Option<&str>) -> Signing {
     // SAFETY: framework constant.
     let key = unsafe { CFString::wrap_under_get_rule(kSecGuestAttributePid) };
-    let attrs =
-        CFDictionary::from_CFType_pairs(&[(key.as_CFType(), CFNumber::from(pid).as_CFType())]);
+    if let Some(signing) = guest(key, CFNumber::from(pid).as_CFType()) {
+        return signing;
+    }
+    match path {
+        Some(p) => for_path(p),
+        None => Signing::unknown(),
+    }
+}
+
+/// Signature of the process behind an audit token (e.g. a socket peer's
+/// `LOCAL_PEERTOKEN`). Unlike a PID, a token cannot be recycled by another process.
+pub fn for_audit_token(token: &[u8; 32]) -> Signing {
+    // SAFETY: framework constant.
+    let key = unsafe { CFString::wrap_under_get_rule(kSecGuestAttributeAudit) };
+    guest(key, CFData::from_buffer(token).as_CFType()).unwrap_or_else(Signing::unknown)
+}
+
+fn guest(key: CFString, value: CFType) -> Option<Signing> {
+    let attrs = CFDictionary::from_CFType_pairs(&[(key.as_CFType(), value)]);
     let mut raw: SecCodeRef = std::ptr::null_mut();
     // SAFETY: valid dictionary in, out-pointer to a local.
     let status = unsafe {
@@ -213,13 +232,7 @@ pub fn for_pid(pid: i32, path: Option<&str>) -> Signing {
             &mut raw,
         )
     };
-    if status == ERR_SUCCESS && !raw.is_null() {
-        return Code { raw, dynamic: true }.classify();
-    }
-    match path {
-        Some(p) => for_path(p),
-        None => Signing::unknown(),
-    }
+    (status == ERR_SUCCESS && !raw.is_null()).then(|| Code { raw, dynamic: true }.classify())
 }
 
 /// Signature of a file or bundle on disk (cached by path).

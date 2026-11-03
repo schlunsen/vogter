@@ -3,7 +3,33 @@
 A native macOS app that watches your Mac for malware, keyloggers, spying and
 use you didn't intend. Rust backend, SwiftUI front end.
 
-## Status: phase 1 — on-demand scanner
+## Status: phase 2: background service and menu bar app
+
+```sh
+cargo run --release -p vogterd          # the service, as your user (dev mode)
+scripts/build-app.sh && open build/Vogter.app   # the menu bar app
+```
+
+The menu bar shield turns orange or red when something needs attention; a mic or camera icon
+appears next to it while either is in use. You get a notification for new medium-or-higher
+findings and whenever the mic or camera turns on. The first scan is a baseline, so only
+*changes* after that alert you.
+
+From the terminal (talks to the running service):
+
+```sh
+vogter status        # last scan, open findings, mic/camera now
+vogter findings      # open findings with their keys
+vogter ack <key>     # "I know about this one", hide it until it goes away and comes back
+vogter watch         # live event stream
+vogter scan-now
+```
+
+To run the service as root at boot (sees every process), copy `build/Vogter.app` to
+`/Applications`, run `sudo scripts/install-daemon.sh`, and give
+`/Applications/Vogter.app/Contents/Helpers/vogterd` Full Disk Access.
+
+### One-shot scanner
 
 ```sh
 cargo build --release
@@ -32,23 +58,29 @@ What it checks today, no special entitlement needed:
 
 ```
 crates/
-  vogter-model    shared types: Snapshot (raw facts) and Finding (assessed result)
-  vogter-sensors  gathers facts: codesign, eventtap, tcc, process, network, persistence, health
+  vogter-model    shared types: Snapshot (raw facts), Finding, StoredFinding, AvState
+  vogter-sensors  gathers facts: codesign, eventtap, tcc, process, network, persistence, health, av
   vogter-detect   rules: Snapshot -> Vec<Finding>, pure and unit-tested
-  vogter-cli      the `vogter` binary
+  vogter-store    SQLite history: active/new/resolved findings, acknowledgements, event log
+  vogter-ipc      daemon <-> client protocol (newline-delimited JSON over a Unix socket)
+  vogterd         the service: timed scans, mic/camera watch, socket server with peer checks
+  vogter-cli      the `vogter` binary: one-shot scans and a client for vogterd
+app/              SwiftUI menu bar app (SwiftPM; `swift test` checks protocol decoding)
+packaging/        LaunchDaemon plist
+scripts/          build-app.sh, install-daemon.sh
 ```
 
-Planned additions: `vogter-es` (Endpoint Security client), `vogter-store`
-(SQLite history), `vogter-ipc` (daemon ↔ app), `vogterd` (root LaunchDaemon),
-`app/` (SwiftUI menu bar app), `packaging/`.
+Socket security: only root, the service's own user, or the user at the console may connect.
+When the service is signed with a Developer ID, peers must also be signed by the same team
+(checked by audit token, not PID).
+
+Planned: `vogter-es` (Endpoint Security client).
 
 ## Roadmap
 
 1. **Scanner** (done): one-shot `vogter scan`.
-2. **Daemon and app**: `vogterd` runs scans on a schedule, stores them in SQLite and alerts on
-   *changes* (new tap, new permission grant, new launch item). The SwiftUI menu bar app shows them,
-   talking to the daemon over a Unix socket that checks the caller's code signature. Live
-   mic/camera-in-use alerts.
+2. **Service and app** (done): timed scans with history, change alerts, mic/camera alerts
+   (mic names the app; camera doesn't yet), menu bar app.
 3. **Endpoint Security** (realtime): program launches with signing info, reads of sensitive
    files (Keychain, browser cookies and logins, `~/.ssh`, Messages), new background/login items,
    permission changes, logins, screen sharing, `sudo`, lock/unlock ("what happened while I was

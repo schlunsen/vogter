@@ -1,2 +1,4 @@
 /target
+/build
+/app/.build
 .DS_Store

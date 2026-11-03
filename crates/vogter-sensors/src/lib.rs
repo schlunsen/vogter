@@ -3,6 +3,7 @@
 //! Everything here works without the Endpoint Security entitlement. Running as
 //! root (and with Full Disk Access) increases visibility.
 
+pub mod av;
 pub mod codesign;
 pub mod eventtap;
 pub mod health;

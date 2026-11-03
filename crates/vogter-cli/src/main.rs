@@ -1,3 +1,5 @@
+mod client;
+
 use std::io::IsTerminal;
 
 use anyhow::Result;
@@ -31,6 +33,20 @@ enum Command {
         #[arg(value_enum)]
         section: Option<Section>,
     },
+    /// Show the background service's status (requires vogterd running).
+    Status,
+    /// List the service's open findings.
+    Findings {
+        /// Include findings you acknowledged.
+        #[arg(long)]
+        all: bool,
+    },
+    /// Stream live events from the service.
+    Watch,
+    /// Mark a finding as known so it stops alerting (key from `vogter findings`).
+    Ack { key: String },
+    /// Ask the service to scan right away.
+    ScanNow,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -72,6 +88,11 @@ fn main() -> Result<()> {
             };
             println!("{}", serde_json::to_string_pretty(&value)?);
         }
+        Command::Status => client::status()?,
+        Command::Findings { all } => client::findings(all)?,
+        Command::Watch => client::watch()?,
+        Command::Ack { key } => client::ack(key)?,
+        Command::ScanNow => client::scan_now()?,
     }
     Ok(())
 }
