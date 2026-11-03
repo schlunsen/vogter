@@ -1,0 +1,102 @@
+name: Release
+
+# Tag push (vX.Y.Z): build, then publish a GitHub Release with the assets.
+# Manual run (workflow_dispatch) on any branch: build and keep the assets as workflow
+# artifacts only, so packaging can be tested without a tag.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (macOS arm64)
+    runs-on: macos-15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Determine version
+        id: version
+        run: |
+          cargo_version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *"\(.*\)"/\1/p' Cargo.toml)"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            if [[ "$version" != "$cargo_version" ]]; then
+              echo "::error::tag $GITHUB_REF_NAME does not match Cargo.toml version $cargo_version"
+              exit 1
+            fi
+          else
+            version="$cargo_version"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+
+      - name: Package
+        run: scripts/release.sh "${{ steps.version.outputs.version }}"
+
+      - name: Verify artifacts
+        run: |
+          cd build/dist
+          shasum -a 256 -c SHA256SUMS
+          unzip -q "Vogter-${{ steps.version.outputs.version }}-macos-arm64.zip" -d "$RUNNER_TEMP/check"
+          codesign --verify --deep --strict "$RUNNER_TEMP/check/Vogter.app"
+          tar -xzf "vogter-${{ steps.version.outputs.version }}-macos-arm64.tar.gz" -C "$RUNNER_TEMP/check"
+          "$RUNNER_TEMP/check/vogter-${{ steps.version.outputs.version }}-macos-arm64/vogter" --version
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vogter-${{ steps.version.outputs.version }}-macos-arm64
+          path: build/dist/*
+          if-no-files-found: error
+
+  # x86_64 (Intel) is not built: GitHub's Intel macOS runners are being retired, and
+  # Intel users can still build from source with the Homebrew formula.
+
+  publish:
+    name: Publish GitHub Release
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: vogter-${{ needs.build.outputs.version }}-macos-arm64
+          path: dist
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+
+      - name: Homebrew sha256 values
+        env:
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          src_sha="$(curl -fsSL "https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz" | sha256sum | cut -d' ' -f1)"
+          zip_sha="$(grep "Vogter-${VERSION}-macos-arm64.zip" dist/SHA256SUMS | cut -d' ' -f1)"
+          {
+            echo "### Homebrew tap bump for ${TAG}"
+            echo
+            echo '```'
+            echo "Formula/vogter.rb  url    https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz"
+            echo "Formula/vogter.rb  sha256 ${src_sha}"
+            echo "Casks/vogter.rb    version \"${VERSION}\""
+            echo "Casks/vogter.rb    sha256  ${zip_sha}"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"

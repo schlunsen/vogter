@@ -21,7 +21,7 @@ jobs:
     name: Rust + Swift (macOS arm64)
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The workspace uses edition 2024 and let-chains, so it needs a recent stable.
       - uses: dtolnay/rust-toolchain@stable
