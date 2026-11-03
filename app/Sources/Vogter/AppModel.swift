@@ -76,11 +76,12 @@ final class AppModel {
     }
 
     var menuBarSymbol: String {
-        guard connected else { return "shield.slash" }
+        // Calm: a leaf. Needs a look: a shield that says so. Not connected: resting.
+        guard connected else { return "moon.zzz" }
         switch worst {
         case .critical?, .high?: return "exclamationmark.shield.fill"
         case .medium?: return "exclamationmark.shield"
-        default: return "checkmark.shield"
+        default: return "leaf"
         }
     }
 
