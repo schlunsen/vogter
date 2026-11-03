@@ -5,6 +5,7 @@
 //! with less fidelity (short-lived processes can be missed).
 
 pub mod browser;
+pub mod downloads;
 pub mod fs;
 pub mod procs;
 pub mod session;

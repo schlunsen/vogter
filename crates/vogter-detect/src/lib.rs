@@ -5,6 +5,7 @@
 //! "who vouches for this code" is the strongest cheap signal available.
 
 mod browser;
+pub mod downloads;
 mod exec;
 mod files;
 pub mod trust;

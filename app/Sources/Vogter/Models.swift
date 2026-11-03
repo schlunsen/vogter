@@ -228,6 +228,7 @@ struct LoggedEvent: Decodable, Identifiable, Hashable {
             case "screen_unlocked": return "lock.open.display"
             case "malware_detected": return "ladybug.fill"
             case "away_summary": return "figure.walk.departure"
+            case "download": return "arrow.down.circle"
             default: return "bolt"
             }
         case .microphoneOn: return "mic.fill"
