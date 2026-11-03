@@ -1,0 +1,9 @@
+[package]
+name = "vogter-detect"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+vogter-model = { version = "0.1.0", path = "../vogter-model" }
