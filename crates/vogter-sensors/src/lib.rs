@@ -6,6 +6,7 @@
 pub mod av;
 pub mod codesign;
 pub mod eventtap;
+pub mod hash;
 pub mod health;
 pub mod network;
 pub mod persistence;

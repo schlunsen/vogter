@@ -47,6 +47,26 @@ enum Command {
     Ack { key: String },
     /// Ask the service to scan right away.
     ScanNow,
+    /// Recent activity with ids (use an id with `vogter trust --event`).
+    Events {
+        #[arg(short = 'n', long, default_value_t = 30)]
+        limit: u32,
+    },
+    /// Trust what a finding or activity is about, so it stops alerting.
+    Trust {
+        /// Finding key from `vogter findings`.
+        key: Option<String>,
+        /// Activity id from `vogter events`.
+        #[arg(long, conflicts_with = "key")]
+        event: Option<i64>,
+        /// Trust it for every check, not just this one.
+        #[arg(long)]
+        all_checks: bool,
+    },
+    /// List trust rules.
+    Trusted,
+    /// Remove a trust rule (id from `vogter trusted`).
+    Untrust { id: i64 },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -93,6 +113,14 @@ fn main() -> Result<()> {
         Command::Watch => client::watch()?,
         Command::Ack { key } => client::ack(key)?,
         Command::ScanNow => client::scan_now()?,
+        Command::Events { limit } => client::events(limit)?,
+        Command::Trust {
+            key,
+            event,
+            all_checks,
+        } => client::trust(key, event, all_checks)?,
+        Command::Trusted => client::trusted()?,
+        Command::Untrust { id } => client::untrust(id)?,
     }
     Ok(())
 }

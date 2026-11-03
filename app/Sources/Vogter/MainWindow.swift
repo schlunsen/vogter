@@ -8,6 +8,7 @@ struct MainWindow: View {
         TabView(selection: $tab) {
             FindingsTab().tabItem { Label("Findings", systemImage: "exclamationmark.shield") }.tag("findings")
             ActivityTab().tabItem { Label("Activity", systemImage: "list.bullet.rectangle") }.tag("activity")
+            TrustedTab().tabItem { Label("Trusted", systemImage: "hand.thumbsup") }.tag("trusted")
             StatusTab().tabItem { Label("Status", systemImage: "gauge") }.tag("status")
         }
         .padding()
@@ -58,9 +59,47 @@ private struct ActivityTab: View {
                 }
                 Spacer()
                 if let sev = e.severity, sev > .info { SeverityBadge(severity: sev) }
+                if case .activity = e.kind {
+                    Menu {
+                        Button("Trust for this kind of alert") { model.trust(e) }
+                        Button("Trust for all alerts") { model.trust(e, allChecks: true) }
+                    } label: { Image(systemName: "hand.thumbsup") }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .help("Trust this program permanently")
+                }
                 Text(Date(timeIntervalSince1970: TimeInterval(e.at)), style: .time)
                     .foregroundStyle(.secondary)
                     .font(.caption)
+            }
+        }
+    }
+}
+
+private struct TrustedTab: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if model.trustRules.isEmpty {
+            VStack(spacing: 8) {
+                Image(systemName: "hand.thumbsup").font(.largeTitle).foregroundStyle(.secondary)
+                Text("Nothing trusted yet").font(.headline)
+                Text("Use the thumbs-up on a finding or activity to stop alerts about an app you know.")
+                    .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            List(model.trustRules) { r in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(r.label).textSelection(.enabled)
+                        Text("\(r.subject.kindLabel) · \(r.check == "*" ? "all alerts" : r.check) · added \(relativeTime(r.createdAt))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Remove") { model.untrust(r) }
+                }
             }
         }
     }
@@ -83,6 +122,10 @@ private struct StatusTab: View {
                         Text(err).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     }
                 }
+                if let until = s.learningUntil, until > UInt64(Date().timeIntervalSince1970) {
+                    LabeledContent("Learning", value: "until \(Date(timeIntervalSince1970: TimeInterval(until)).formatted(date: .abbreviated, time: .omitted))")
+                }
+                LabeledContent("Trust rules", value: "\(s.trustRules ?? 0)")
                 LabeledContent("Microphone", value: s.av.microphoneInUse ? "in use" : "off")
                 LabeledContent("Camera", value: s.av.cameraInUse ? "in use" : "off")
                 Section("Limited visibility") {

@@ -72,6 +72,14 @@ final class DecodingTests: XCTestCase {
         XCTAssertEqual(e.severity, .medium)
     }
 
+    func testTrustRules() throws {
+        let json = #"{"type":"trust_rules","rules":[{"id":1,"check":"process","subject":{"type":"file","path":"/tmp/x","sha256":"7d13d4f7db9b"},"label":"/tmp/x (contents 7d13d4f7db9b)","created_at":5},{"id":2,"check":"*","subject":{"type":"developer","team_id":"ABCDE12345","identifier":"com.example.app"},"label":"App (developer ABCDE12345)","created_at":6}]}"#
+        guard case let .trustRules(rules) = try decode(json) else { return XCTFail("not trust rules") }
+        XCTAssertEqual(rules.count, 2)
+        XCTAssertEqual(rules[0].subject.kindLabel, "File (exact contents)")
+        XCTAssertEqual(rules[1].subject, .developer(teamId: "ABCDE12345", identifier: "com.example.app"))
+    }
+
     func testUnknownTypesDoNotThrow() throws {
         guard case .unknown("future") = try decode(#"{"type":"future"}"#) else { return XCTFail() }
     }

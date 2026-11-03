@@ -3,7 +3,7 @@
 A native macOS app that watches your Mac for malware, keyloggers, spying and
 use you didn't intend. Rust backend, SwiftUI front end.
 
-## Status: phase 3: realtime monitoring
+## Status: phase 4: trust and learning
 
 ```sh
 cargo run --release -p vogterd          # the service, as your user (dev mode)
@@ -44,6 +44,20 @@ To run the service as root at boot (sees every process), copy `build/Vogter.app`
   sessions and XProtect detections. See [docs/endpoint-security.md](docs/endpoint-security.md).
 
 `vogter status` shows which realtime sources are active and, if Endpoint Security is off, why.
+
+### Trust and learning
+
+- **Trust** an app or file from any finding or activity (thumbs-up in the app, or
+  `vogter trust <key>` / `vogter trust --event <id>`). Signed apps are trusted by developer
+  Team ID, which a lookalike can't fake. Unsigned files are trusted by their exact SHA-256, so
+  trust ends if the file is replaced. Apple tools (`/bin/bash` …) are only ever trusted for one
+  specific alert, because they run everything. Trust covers a family of related alerts
+  (process, startup items, permissions, keylogger, network), or all alerts if you choose.
+  `vogter trusted` and `vogter untrust <id>` manage the rules.
+- **Learning:** Vogter remembers every non-Apple program it sees. For the first 7 days it only
+  learns. After that, a program running for the first time is noted (Low if it has no developer
+  signature). Low and Medium launch alerts for programs that have run 20+ times over 3+ days
+  are lowered one level. High and Critical are never lowered.
 
 ### One-shot scanner
 
@@ -100,9 +114,9 @@ When the service is signed with a Developer ID, peers must also be signed by the
 3. **Realtime** (done): live program checks, startup and permission folder watching, sudo,
    lock/unlock with an away summary. The Endpoint Security client is built. Testing it on a real Mac
    needs Apple's entitlement, or a VM with SIP off (see docs/endpoint-security.md).
-4. **Detection quality**: allowlists, learning what's normal for this Mac, Sigma rules via
-   `rsigma-eval`, YARA scanning of new binaries via `yara-x`.
-5. **Later**: Network Extension (Swift) for per-app network control, notarized releases.
+4. **Trust and learning** (done): see above.
+5. **More detection**: Sigma rules via `rsigma-eval`, YARA scanning of new binaries via `yara-x`.
+6. **Later**: Network Extension (Swift) for per-app network control, notarized releases.
 
 ## Why not build on Rustinel?
 

@@ -6,7 +6,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, params};
 use vogter_ipc::{Event, LoggedEvent};
-use vogter_model::{Finding, Severity, StoredFinding};
+use vogter_model::{Finding, Severity, StoredFinding, TrustRule, TrustSubject};
 
 pub type Result<T> = rusqlite::Result<T>;
 
@@ -15,6 +15,12 @@ pub struct Store {
 }
 
 /// What changed in a scan compared to the previous one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProgramHistory {
+    pub first_seen: u64,
+    pub runs: u64,
+}
+
 #[derive(Debug, Default)]
 pub struct ScanDiff {
     pub new: Vec<StoredFinding>,
@@ -45,6 +51,24 @@ CREATE TABLE IF NOT EXISTS events (
     at   INTEGER NOT NULL,
     data TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS trust (
+    id         INTEGER PRIMARY KEY,
+    check_id   TEXT NOT NULL,
+    subject    TEXT NOT NULL,
+    label      TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS programs (
+    identity   TEXT PRIMARY KEY,
+    label      TEXT NOT NULL,
+    first_seen INTEGER NOT NULL,
+    last_seen  INTEGER NOT NULL,
+    runs       INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 ";
 
 impl Store {
@@ -59,7 +83,144 @@ impl Store {
     fn init(conn: Connection) -> Result<Self> {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.execute_batch(SCHEMA)?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        conn.execute(
+            "INSERT OR IGNORE INTO meta (key, value) VALUES ('created_at', ?1)",
+            [now.to_string()],
+        )?;
         Ok(Store { conn })
+    }
+
+    /// When this database was first created (start of the learning period).
+    pub fn created_at(&self) -> Result<u64> {
+        let v: String =
+            self.conn
+                .query_row("SELECT value FROM meta WHERE key = 'created_at'", [], |r| {
+                    r.get(0)
+                })?;
+        Ok(v.parse().unwrap_or(0))
+    }
+
+    /// Raw connection, for tests in other crates.
+    #[doc(hidden)]
+    pub fn conn_for_tests(&self) -> &Connection {
+        &self.conn
+    }
+
+    #[cfg(test)]
+    fn set_created_at(&self, at: u64) {
+        self.conn
+            .execute(
+                "UPDATE meta SET value = ?1 WHERE key = 'created_at'",
+                [at.to_string()],
+            )
+            .unwrap();
+    }
+
+    // ---- trust ------------------------------------------------------------
+
+    pub fn add_trust(
+        &self,
+        check: &str,
+        subject: &TrustSubject,
+        label: &str,
+        at: u64,
+    ) -> Result<TrustRule> {
+        let data = serde_json::to_string(subject).expect("subject serializes");
+        self.conn.execute(
+            "INSERT INTO trust (check_id, subject, label, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![check, data, label, at],
+        )?;
+        Ok(TrustRule {
+            id: self.conn.last_insert_rowid(),
+            check: check.into(),
+            subject: subject.clone(),
+            label: label.into(),
+            created_at: at,
+        })
+    }
+
+    pub fn trust_rules(&self) -> Result<Vec<TrustRule>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, check_id, subject, label, created_at FROM trust ORDER BY id")?;
+        let rows = stmt.query_map([], |r| {
+            let data: String = r.get(2)?;
+            let subject = serde_json::from_str(&data).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, e.into())
+            })?;
+            Ok(TrustRule {
+                id: r.get(0)?,
+                check: r.get(1)?,
+                subject,
+                label: r.get(3)?,
+                created_at: r.get(4)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Returns false if there was no such rule.
+    pub fn remove_trust(&self, id: i64) -> Result<bool> {
+        Ok(self.conn.execute("DELETE FROM trust WHERE id = ?1", [id])? > 0)
+    }
+
+    // ---- program familiarity ---------------------------------------------
+
+    /// Record a run of a program; returns what was known *before* this run.
+    pub fn record_program(
+        &self,
+        identity: &str,
+        label: &str,
+        at: u64,
+    ) -> Result<Option<ProgramHistory>> {
+        let prior = self
+            .conn
+            .query_row(
+                "SELECT first_seen, runs FROM programs WHERE identity = ?1",
+                [identity],
+                |r| {
+                    Ok(ProgramHistory {
+                        first_seen: r.get(0)?,
+                        runs: r.get(1)?,
+                    })
+                },
+            )
+            .optional()?;
+        self.conn.execute(
+            "INSERT INTO programs (identity, label, first_seen, last_seen, runs) VALUES (?1, ?2, ?3, ?3, 1)
+             ON CONFLICT(identity) DO UPDATE SET last_seen = ?3, runs = runs + 1, label = ?2",
+            params![identity, label, at],
+        )?;
+        Ok(prior)
+    }
+
+    /// A stored finding by key (active or not).
+    pub fn finding(&self, key: &str) -> Result<Option<StoredFinding>> {
+        load(&self.conn, key)
+    }
+
+    pub fn event(&self, id: i64) -> Result<Option<LoggedEvent>> {
+        self.conn
+            .query_row("SELECT id, at, data FROM events WHERE id = ?1", [id], |r| {
+                let data: String = r.get(2)?;
+                let event = serde_json::from_str(&data).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        2,
+                        rusqlite::types::Type::Text,
+                        e.into(),
+                    )
+                })?;
+                Ok(LoggedEvent {
+                    id: r.get(0)?,
+                    at: r.get(1)?,
+                    event,
+                })
+            })
+            .optional()
     }
 
     /// Merge one scan's findings into history and report the differences.
@@ -283,6 +444,44 @@ mod tests {
         let d = s.record_scan(4, &[finding("a")]).unwrap();
         assert_eq!(d.new.len(), 1);
         assert_eq!(s.active(false).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn trust_rules_round_trip() {
+        let s = Store::in_memory().unwrap();
+        let subject = TrustSubject::Developer {
+            team_id: "T".into(),
+            identifier: None,
+        };
+        let r = s
+            .add_trust("keylogger.event_tap", &subject, "App (developer T)", 9)
+            .unwrap();
+        assert_eq!(s.trust_rules().unwrap(), vec![r.clone()]);
+        assert!(s.remove_trust(r.id).unwrap());
+        assert!(!s.remove_trust(r.id).unwrap());
+        assert!(s.trust_rules().unwrap().is_empty());
+    }
+
+    #[test]
+    fn program_history() {
+        let s = Store::in_memory().unwrap();
+        assert_eq!(s.record_program("path:/x", "x", 10).unwrap(), None);
+        assert_eq!(
+            s.record_program("path:/x", "x", 20).unwrap(),
+            Some(ProgramHistory {
+                first_seen: 10,
+                runs: 1
+            })
+        );
+        assert_eq!(
+            s.record_program("path:/x", "x", 30).unwrap(),
+            Some(ProgramHistory {
+                first_seen: 10,
+                runs: 2
+            })
+        );
+        s.set_created_at(5);
+        assert_eq!(s.created_at().unwrap(), 5);
     }
 
     #[test]

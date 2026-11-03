@@ -56,7 +56,15 @@ struct FindingRow: View {
             }
             Button { model.acknowledge(finding) } label: { Image(systemName: "checkmark.circle") }
                 .buttonStyle(.borderless)
-                .help("I know about this — stop showing it")
+                .help("I know about this — hide it until it goes away and comes back")
+            Menu {
+                Button("Trust for this kind of alert") { model.trust(finding) }
+                Button("Trust for all alerts") { model.trust(finding, allChecks: true) }
+            } label: { Image(systemName: "hand.thumbsup") }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Trust this app or file permanently")
         }
         .padding(.vertical, 3)
     }

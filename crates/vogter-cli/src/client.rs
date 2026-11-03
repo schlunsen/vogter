@@ -87,6 +87,17 @@ pub fn status() -> Result<()> {
         "microphone: {mic}   camera: {}",
         if s.av.camera_in_use { "ON" } else { "off" }
     );
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if s.learning_until > now {
+        println!(
+            "learning what's normal: {} days left",
+            (s.learning_until - now).div_ceil(86_400)
+        );
+    }
+    println!("trust rules: {}", s.trust_rules);
     let rt = &s.realtime;
     println!(
         "realtime: {}",
@@ -139,6 +150,57 @@ pub fn ack(key: String) -> Result<()> {
 
 pub fn scan_now() -> Result<()> {
     expect_ok(Conn::open()?.call(Request::ScanNow)?)
+}
+
+pub fn events(limit: u32) -> Result<()> {
+    let Message::Events { events } = Conn::open()?.call(Request::Events { limit })? else {
+        bail!("unexpected reply")
+    };
+    for e in events.iter().rev() {
+        println!("#{:<5} {}", e.id, describe(e));
+    }
+    Ok(())
+}
+
+pub fn trust(finding_key: Option<String>, event_id: Option<i64>, all_checks: bool) -> Result<()> {
+    if finding_key.is_none() && event_id.is_none() {
+        bail!("give a finding key (vogter findings) or --event <id> (vogter events)");
+    }
+    match Conn::open()?.call(Request::Trust {
+        finding_key,
+        event_id,
+        all_checks,
+    })? {
+        Message::Trusted { rule } => {
+            println!("trusted #{}: {} (for {})", rule.id, rule.label, rule.check);
+            Ok(())
+        }
+        Message::Error { message } => bail!(message),
+        other => bail!("unexpected reply: {other:?}"),
+    }
+}
+
+pub fn trusted() -> Result<()> {
+    let Message::TrustRules { rules } = Conn::open()?.call(Request::TrustRules)? else {
+        bail!("unexpected reply")
+    };
+    if rules.is_empty() {
+        println!("no trust rules");
+    }
+    for r in rules {
+        println!(
+            "#{:<4} {}  — for {}, added {} ago",
+            r.id,
+            r.label,
+            r.check,
+            ago(r.created_at)
+        );
+    }
+    Ok(())
+}
+
+pub fn untrust(id: i64) -> Result<()> {
+    expect_ok(Conn::open()?.call(Request::Untrust { id })?)
 }
 
 pub fn watch() -> Result<()> {

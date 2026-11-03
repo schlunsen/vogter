@@ -7,8 +7,10 @@ publish.workspace = true
 
 [dependencies]
 core-foundation = "0.10.1"
+hex = "0.4.3"
 libc = "0.2.191"
 libproc = "0.14.11"
 plist = "1.10.3"
 rusqlite = { version = "0.41.1", features = ["bundled"] }
+sha2 = "0.11.1"
 vogter-model = { version = "0.1.0", path = "../vogter-model" }

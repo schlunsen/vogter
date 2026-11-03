@@ -50,6 +50,20 @@ pub enum Request {
     },
     /// Start receiving pushed events on this connection.
     Subscribe,
+    /// Trust whatever a finding (by key) or activity event (by id) is about.
+    Trust {
+        #[serde(default)]
+        finding_key: Option<String>,
+        #[serde(default)]
+        event_id: Option<i64>,
+        /// Trust it for every check, not just the one that fired.
+        #[serde(default)]
+        all_checks: bool,
+    },
+    TrustRules,
+    Untrust {
+        id: i64,
+    },
 }
 
 fn default_limit() -> u32 {
@@ -62,6 +76,8 @@ pub enum Message {
     Status(Status),
     Findings { findings: Vec<StoredFinding> },
     Events { events: Vec<LoggedEvent> },
+    Trusted { rule: vogter_model::TrustRule },
+    TrustRules { rules: Vec<vogter_model::TrustRule> },
     Ok,
     Error { message: String },
     Event(LoggedEvent),
@@ -82,6 +98,9 @@ pub struct Status {
     /// Sensors with reduced visibility in the last scan.
     pub sensor_errors: Vec<String>,
     pub realtime: Realtime,
+    /// Until then, first runs of programs are learned silently (Unix seconds).
+    pub learning_until: u64,
+    pub trust_rules: u32,
 }
 
 /// Which live sources are running.

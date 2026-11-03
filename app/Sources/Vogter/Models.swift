@@ -79,6 +79,45 @@ struct Realtime: Codable, Hashable {
     var sources: [String]
 }
 
+enum TrustSubject: Decodable, Hashable {
+    case developer(teamId: String, identifier: String?)
+    case file(path: String, sha256: String?)
+    case exact(key: String)
+    case unknown
+
+    private enum Keys: String, CodingKey { case type, teamId, identifier, path, sha256, key }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        switch try c.decode(String.self, forKey: .type) {
+        case "developer":
+            self = .developer(teamId: try c.decode(String.self, forKey: .teamId),
+                              identifier: try c.decodeIfPresent(String.self, forKey: .identifier))
+        case "file":
+            self = .file(path: try c.decode(String.self, forKey: .path), sha256: try c.decodeIfPresent(String.self, forKey: .sha256))
+        case "exact": self = .exact(key: try c.decode(String.self, forKey: .key))
+        default: self = .unknown
+        }
+    }
+
+    var kindLabel: String {
+        switch self {
+        case .developer: return "Developer"
+        case let .file(_, hash): return hash == nil ? "Path" : "File (exact contents)"
+        case .exact: return "This alert only"
+        case .unknown: return "Other"
+        }
+    }
+}
+
+struct TrustRule: Decodable, Identifiable, Hashable {
+    var id: Int64
+    var check: String
+    var subject: TrustSubject
+    var label: String
+    var createdAt: UInt64
+}
+
 struct DaemonStatus: Codable {
     var `protocol`: Int
     var version: String
@@ -91,6 +130,8 @@ struct DaemonStatus: Codable {
     var av: AvState
     var sensorErrors: [String]
     var realtime: Realtime?
+    var learningUntil: UInt64?
+    var trustRules: UInt32?
 }
 
 enum EventKind: Hashable {
@@ -202,12 +243,14 @@ enum DaemonMessage: Decodable {
     case status(DaemonStatus)
     case findings([StoredFinding])
     case events([LoggedEvent])
+    case trusted(TrustRule)
+    case trustRules([TrustRule])
     case ok
     case error(String)
     case event(LoggedEvent)
     case unknown(String)
 
-    private enum Keys: String, CodingKey { case type, findings, events, message }
+    private enum Keys: String, CodingKey { case type, findings, events, message, rule, rules }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -215,6 +258,8 @@ enum DaemonMessage: Decodable {
         case "status": self = .status(try DaemonStatus(from: decoder))
         case "findings": self = .findings(try c.decode([StoredFinding].self, forKey: .findings))
         case "events": self = .events(try c.decode([LoggedEvent].self, forKey: .events))
+        case "trusted": self = .trusted(try c.decode(TrustRule.self, forKey: .rule))
+        case "trust_rules": self = .trustRules(try c.decode([TrustRule].self, forKey: .rules))
         case "ok": self = .ok
         case "error": self = .error(try c.decode(String.self, forKey: .message))
         case "event": self = .event(try LoggedEvent(from: decoder))

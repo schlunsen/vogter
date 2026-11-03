@@ -6,6 +6,7 @@
 
 mod exec;
 mod files;
+pub mod trust;
 
 pub use exec::assess_exec;
 pub use files::{SensitiveArea, assess_file_read, sensitive_areas};

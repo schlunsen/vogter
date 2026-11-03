@@ -32,6 +32,18 @@ impl Severity {
     }
 }
 
+impl Severity {
+    /// One level less severe (Info stays Info).
+    pub fn lower(self) -> Severity {
+        match self {
+            Severity::Critical => Severity::High,
+            Severity::High => Severity::Medium,
+            Severity::Medium => Severity::Low,
+            Severity::Low | Severity::Info => Severity::Info,
+        }
+    }
+}
+
 impl std::str::FromStr for Severity {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -451,5 +463,63 @@ impl Activity {
         self.path = Some(e.path.clone());
         self.signing = Some(e.signing.clone());
         self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Trust
+// ---------------------------------------------------------------------------
+
+/// What a trust rule vouches for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum TrustSubject {
+    /// Code signed by this developer (and, if given, with this identifier).
+    /// The signature must be valid, so this can't be forged by a lookalike.
+    Developer {
+        team_id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        identifier: Option<String>,
+    },
+    /// This exact file. With a hash, trust ends if the file's contents change.
+    File {
+        path: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        sha256: Option<String>,
+    },
+    /// One specific finding or activity, when there is nothing more distinctive
+    /// to trust (e.g. an Apple tool running a script).
+    Exact { key: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrustRule {
+    pub id: i64,
+    /// A check id (`keylogger.event_tap`, `activity.process_started`) or `*` for all.
+    pub check: String,
+    pub subject: TrustSubject,
+    /// Human description, e.g. "Raycast (developer SY64MV22J9)".
+    pub label: String,
+    pub created_at: u64,
+}
+
+impl Activity {
+    /// Check id used by trust rules for activities.
+    pub fn check(&self) -> String {
+        let kind = serde_json::to_value(self.kind)
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_default();
+        format!("activity.{kind}")
+    }
+
+    /// Identity for repeat suppression and exact trust.
+    pub fn key(&self) -> String {
+        format!(
+            "{}|{}|{}",
+            self.check(),
+            self.summary,
+            self.path.as_deref().unwrap_or("")
+        )
     }
 }

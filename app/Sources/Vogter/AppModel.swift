@@ -10,6 +10,7 @@ final class AppModel {
     var status: DaemonStatus?
     var findings: [StoredFinding] = []
     var events: [LoggedEvent] = []
+    var trustRules: [TrustRule] = []
     var lastError: String?
 
     var showInfo: Bool = UserDefaults.standard.bool(forKey: "showInfo") {
@@ -67,6 +68,21 @@ final class AppModel {
         connection?.send(["type": "status"])
     }
 
+    func trust(_ f: StoredFinding, allChecks: Bool = false) {
+        connection?.send(["type": "trust", "finding_key": f.key, "all_checks": allChecks])
+        findings.removeAll { $0.key == f.key }
+    }
+
+    func trust(_ e: LoggedEvent, allChecks: Bool = false) {
+        connection?.send(["type": "trust", "event_id": e.id, "all_checks": allChecks])
+    }
+
+    func untrust(_ r: TrustRule) {
+        connection?.send(["type": "untrust", "id": r.id])
+        trustRules.removeAll { $0.id == r.id }
+        refreshSoon()
+    }
+
     func reveal(_ f: StoredFinding) {
         guard let path = f.path else { return }
         NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
@@ -76,6 +92,7 @@ final class AppModel {
         connection?.send(["type": "status"])
         connection?.send(["type": "findings"])
         connection?.send(["type": "events", "limit": 200])
+        connection?.send(["type": "trust_rules"])
     }
 
     // MARK: Connection
@@ -123,6 +140,10 @@ final class AppModel {
         case let .status(s): status = s
         case let .findings(f): findings = f
         case let .events(e): events = e
+        case let .trustRules(r): trustRules = r
+        case .trusted:
+            connection?.send(["type": "trust_rules"])
+            connection?.send(["type": "status"])
         case let .error(m): lastError = m
         case let .event(e):
             events.insert(e, at: 0)
