@@ -86,6 +86,10 @@ fn main() -> Result<()> {
         .name("scanner".into())
         .spawn(move || d.scan_loop(scan_rx))?;
     let d = daemon.clone();
+    thread::Builder::new()
+        .name("retention".into())
+        .spawn(move || d.retention_loop())?;
+    let d = daemon.clone();
     let poll = Duration::from_millis(args.av_poll_ms);
     thread::Builder::new()
         .name("av".into())

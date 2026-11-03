@@ -1,4 +1,5 @@
 mod client;
+mod history;
 
 use std::io::IsTerminal;
 
@@ -69,6 +70,73 @@ enum Command {
     Trusted,
     /// Remove a trust rule (id from `vogter trusted`).
     Untrust { id: i64 },
+    /// Look back through history: events (default), --days, --findings or --away.
+    ///
+    /// Times: 2026-11-01 (local), today, yesterday, 7d / 12h / 2w ago, or Unix seconds.
+    History {
+        /// From this time on.
+        #[arg(long)]
+        since: Option<String>,
+        /// Up to this time (a date includes that whole day).
+        #[arg(long)]
+        until: Option<String>,
+        /// Lowest severity to show.
+        #[arg(long, short = 's')]
+        min_severity: Option<Severity>,
+        /// Only these kinds: sudo, process_started, persistence_changed, download,
+        /// microphone_on, new_finding, persistence (a finding category), ... Repeatable.
+        #[arg(long = "kind", short = 'k')]
+        kinds: Vec<String>,
+        /// Text in the summary, details, program or path.
+        #[arg(long)]
+        search: Option<String>,
+        /// Only what concerns the program at this path.
+        #[arg(long)]
+        program: Option<String>,
+        /// Only events you haven't marked reviewed.
+        #[arg(long)]
+        unreviewed: bool,
+        #[arg(short = 'n', long, default_value_t = 50)]
+        limit: u32,
+        /// Older page: events before this id (printed at the end of a page).
+        #[arg(long)]
+        before: Option<i64>,
+        /// Day by day summary of the last N days instead.
+        #[arg(long, conflicts_with_all = ["findings", "away"])]
+        days: Option<u32>,
+        /// Findings that came and went, instead of events.
+        #[arg(long, conflicts_with = "away")]
+        findings: bool,
+        /// Times the screen was locked.
+        #[arg(long)]
+        away: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    /// What appeared and went away since a time (default: 7 days ago).
+    Changes {
+        #[arg(long, default_value = "7d")]
+        since: String,
+        /// Lowest finding severity [default: low].
+        #[arg(long, short = 's')]
+        min_severity: Option<Severity>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Everything Vogter knows about one program.
+    Program {
+        path: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Put a note on an event (no text clears it).
+    Note { id: i64, text: Vec<String> },
+    /// Mark an event reviewed (--undo to unmark).
+    Review {
+        id: i64,
+        #[arg(long)]
+        undo: bool,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -124,6 +192,46 @@ fn main() -> Result<()> {
         } => client::trust(key, event, all_checks)?,
         Command::Trusted => client::trusted()?,
         Command::Untrust { id } => client::untrust(id)?,
+        Command::History {
+            since,
+            until,
+            min_severity,
+            kinds,
+            search,
+            program,
+            unreviewed,
+            limit,
+            before,
+            days,
+            findings,
+            away,
+            json,
+        } => history::history(history::HistoryArgs {
+            query: vogter_ipc::HistoryQuery {
+                since: since.map(|s| history::parse_time(&s, false)).transpose()?,
+                until: until.map(|s| history::parse_time(&s, true)).transpose()?,
+                before_id: before,
+                limit: Some(limit),
+                min_severity,
+                kinds,
+                search,
+                program,
+                unreviewed_only: unreviewed,
+                ..Default::default()
+            },
+            days,
+            findings,
+            away,
+            json,
+        })?,
+        Command::Changes {
+            since,
+            min_severity,
+            json,
+        } => history::changes(history::parse_time(&since, false)?, min_severity, json)?,
+        Command::Program { path, json } => history::program(path, json)?,
+        Command::Note { id, text } => history::note(id, text.join(" "))?,
+        Command::Review { id, undo } => history::review(id, !undo)?,
     }
     Ok(())
 }

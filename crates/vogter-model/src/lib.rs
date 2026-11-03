@@ -430,6 +430,9 @@ pub struct StoredFinding {
     pub last_seen: u64,
     /// The user said "I know about this one".
     pub acknowledged: bool,
+    /// When it went away (Unix seconds); only set in finding history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_at: Option<u64>,
 }
 
 /// A process currently recording from an audio input.
