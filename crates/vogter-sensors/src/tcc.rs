@@ -44,7 +44,7 @@ pub fn collect(errors: &mut Vec<(String, String)>) -> Vec<TccGrant> {
             Ok(mut g) => grants.append(&mut g),
             Err(e) => errors.push((
                 source_for(scope).into(),
-                format!("{path}: {e} (grant Full Disk Access to your terminal to read it)"),
+                format!("{path}: {e} ({})", full_disk_access_hint()),
             )),
         }
     }
@@ -105,6 +105,21 @@ fn bundle_path(bundle_id: &str) -> Option<String> {
         .next()
         .and_then(|u| u.to_path())
         .map(|p| p.display().to_string())
+}
+
+/// Who needs Full Disk Access: the service binary itself when it runs on its
+/// own (launchd), or the terminal it was started from.
+fn full_disk_access_hint() -> String {
+    let exe = std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "vogterd".into());
+    if crate::user::is_root() || std::env::var_os("TERM").is_none() {
+        format!(
+            "give {exe} Full Disk Access in System Settings → Privacy & Security, then restart it"
+        )
+    } else {
+        "give your terminal app Full Disk Access to read it".into()
+    }
 }
 
 /// Source label for findings from one permission database.
