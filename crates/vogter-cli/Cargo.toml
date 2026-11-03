@@ -10,10 +10,10 @@ anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
 libc = "0.2.191"
 serde_json = "1.0.154"
-vogter-detect = { version = "0.1.0", path = "../vogter-detect" }
-vogter-ipc = { version = "0.1.0", path = "../vogter-ipc" }
-vogter-model = { version = "0.1.0", path = "../vogter-model" }
-vogter-sensors = { version = "0.1.0", path = "../vogter-sensors" }
+vogter-detect = { version = "0.2.0", path = "../vogter-detect" }
+vogter-ipc = { version = "0.2.0", path = "../vogter-ipc" }
+vogter-model = { version = "0.2.0", path = "../vogter-model" }
+vogter-sensors = { version = "0.2.0", path = "../vogter-sensors" }
 
 [[bin]]
 name = "vogter"

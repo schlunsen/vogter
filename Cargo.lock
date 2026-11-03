@@ -1018,7 +1018,7 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "vogter-cli"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1032,14 +1032,14 @@ dependencies = [
 
 [[package]]
 name = "vogter-detect"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "vogter-model",
 ]
 
 [[package]]
 name = "vogter-es"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "endpoint-sec",
  "tracing",
@@ -1050,7 +1050,7 @@ dependencies = [
 
 [[package]]
 name = "vogter-ipc"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1059,7 +1059,7 @@ dependencies = [
 
 [[package]]
 name = "vogter-model"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1067,7 +1067,7 @@ dependencies = [
 
 [[package]]
 name = "vogter-sensors"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "core-foundation",
  "hex",
@@ -1082,7 +1082,7 @@ dependencies = [
 
 [[package]]
 name = "vogter-store"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "rusqlite",
  "serde_json",
@@ -1092,7 +1092,7 @@ dependencies = [
 
 [[package]]
 name = "vogterd"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",

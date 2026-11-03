@@ -145,6 +145,27 @@ critical alerts are never softened.
 
 <p align="center"><img src="docs/images/divider.svg" alt="" width="60%"></p>
 
+## Looking back
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/history-dark.png">
+  <img src="docs/images/history-light.png" alt="The History tab: a six-month calendar heatmap, a list of recent days, and today's timeline with a shaded 'While you were away' band">
+</picture>
+
+The **History** tab keeps a quiet record of the last few months:
+
+- **A calendar** where calm days are pale sage and busier ones warm up.
+- **Each day's timeline**, with your time away shown as a soft band.
+- **Search and filters**: narrow it to one program, or to the alerts worth a look.
+- **"What changed since last week?"** shows new startup items, permissions and programs at a glance.
+- **Who is this?** tells you when a program first ran here and what it has done since.
+- **Notes**: leave yourself a note, or mark an alert reviewed.
+
+Everyday events are kept for 90 days and alerts for a year, all on your Mac. From the terminal:
+`vogter history`, `vogter changes --since 7d`, `vogter program <path>`.
+
+<p align="center"><img src="docs/images/divider.svg" alt="" width="60%"></p>
+
 ## Install
 
 ### Homebrew
@@ -218,6 +239,10 @@ on their own.
 | `vogter findings [--all]` | Open findings with their keys (`--all` includes acknowledged ones) |
 | `vogter events [-n 30]` | Recent activity with ids |
 | `vogter show <id>` | Everything known about one event |
+| `vogter history [--since 7d] [-s medium] [--search text] [--program path]` | Look back through events (`--days`, `--findings`, `--away` for summaries) |
+| `vogter changes [--since 7d]` | What's new or gone since a date |
+| `vogter program <path>` | Who is this? First seen, runs, findings and alerts for one program |
+| `vogter note <id> <text>` / `vogter review <id>` | Add a note to an event, or mark it reviewed |
 | `vogter trust <key>` / `vogter trust --event <id> [--all-checks]` | Trust what a finding or event is about |
 | `vogter trusted` | List trust rules |
 | `vogter untrust <id>` | Remove a trust rule |
