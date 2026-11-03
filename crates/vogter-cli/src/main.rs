@@ -107,6 +107,9 @@ enum Command {
         /// Findings that came and went, instead of events.
         #[arg(long, conflicts_with = "away")]
         findings: bool,
+        /// With --findings: only those that went away.
+        #[arg(long, requires = "findings")]
+        resolved: bool,
         /// Times the screen was locked.
         #[arg(long)]
         away: bool,
@@ -204,6 +207,7 @@ fn main() -> Result<()> {
             before,
             days,
             findings,
+            resolved,
             away,
             json,
         } => history::history(history::HistoryArgs {
@@ -217,6 +221,7 @@ fn main() -> Result<()> {
                 search,
                 program,
                 unreviewed_only: unreviewed,
+                resolved_only: resolved,
                 ..Default::default()
             },
             days,

@@ -201,15 +201,16 @@ fn days(conn: &mut Conn, n: u32, json: bool) -> Result<()> {
             day.clone()
         };
         let Some(d) = days.iter().find(|d| d.day == day) else {
-            println!("{label:<11} all quiet");
+            println!("{label:<11}    0 events  quiet");
             continue;
         };
         let [_, low, medium, high, critical] = d.counts;
-        let look = medium + high + critical;
-        let mood = match (look, high + critical) {
-            (0, _) => "all calm".to_string(),
-            (n, 0) => format!("{n} worth a look"),
-            (n, h) => format!("{n} worth a look, {h} important"),
+        let important = high + critical;
+        let mood = match (important, medium) {
+            (0, 0) => "all calm".to_string(),
+            (0, m) => format!("{m} worth a look"),
+            (i, 0) => format!("{i} important"),
+            (i, m) => format!("{i} important, {m} worth a look"),
         };
         let bar: String = "●".repeat((high + critical).min(10) as usize)
             + &"◐".repeat(medium.min(10) as usize)
@@ -285,10 +286,11 @@ pub fn changes(since: u64, min: Option<Severity>, json: bool) -> Result<()> {
         println!("\nPrograms that ran for the first time:");
         for p in &c.new_programs {
             println!(
-                "  {}  {} ({} runs)",
+                "  {}  {} ({} run{})",
                 date_time(p.first_seen),
                 p.label,
-                p.runs
+                p.runs,
+                if p.runs == 1 { "" } else { "s" }
             );
         }
     }
@@ -332,7 +334,7 @@ pub fn program(path: String, json: bool) -> Result<()> {
     }
     println!("\nActivity ({} in history):", p.event_count);
     for e in &p.events {
-        print!("  {} ", date(e.at));
+        print!("{}", date(e.at));
         print_event(e);
     }
     Ok(())
