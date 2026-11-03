@@ -11,6 +11,22 @@ final class AppModel {
     var findings: [StoredFinding] = []
     var events: [LoggedEvent] = []
     var trustRules: [TrustRule] = []
+    /// Main window state, so alerts can open it on the right item.
+    var selectedTab = "findings"
+    var selectedEventID: Int64?
+
+    var selectedEvent: LoggedEvent? {
+        events.first { $0.id == selectedEventID }
+    }
+
+    /// Show an alert in the main window (the caller opens the window).
+    func select(eventID: Int64) {
+        selectedTab = "activity"
+        selectedEventID = eventID
+        if !events.contains(where: { $0.id == eventID }) {
+            connection?.send(["type": "events", "limit": 500])
+        }
+    }
     var lastError: String?
 
     var showInfo: Bool = UserDefaults.standard.bool(forKey: "showInfo") {
@@ -81,6 +97,36 @@ final class AppModel {
         connection?.send(["type": "untrust", "id": r.id])
         trustRules.removeAll { $0.id == r.id }
         refreshSoon()
+    }
+
+    func reveal(path: String) {
+        NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
+    }
+
+    func copyDetails(_ e: LoggedEvent) {
+        guard case let .activity(a) = e.kind else { return }
+        var lines = ["[\(a.severity.label)] \(a.summary)", "Time: \(Date(timeIntervalSince1970: TimeInterval(e.at)))"]
+        if let p = a.process { lines.append("Program: \(p)\(a.pid.map { " (pid \($0))" } ?? "")") }
+        if let p = a.path { lines.append("Path: \(p)") }
+        if let s = a.signing { lines.append("Signature: \(s.summary)\(s.identifier.map { " [\($0)]" } ?? "")") }
+        if let d = a.detail { lines.append("Details: \(d)") }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
+    }
+
+    /// Whether `pid` is still the program at `path` (PIDs get reused).
+    func isRunning(pid: Int32, path: String?) -> Bool {
+        guard kill(pid, 0) == 0 || errno == EPERM else { return false }
+        guard let path else { return true }
+        var buf = [CChar](repeating: 0, count: 4096)
+        guard proc_pidpath(pid, &buf, UInt32(buf.count)) > 0 else { return false }
+        return String(cString: buf) == path
+    }
+
+    /// Ask the program to quit (SIGTERM). Returns false if not allowed (e.g. another user's process).
+    @discardableResult
+    func terminate(pid: Int32) -> Bool {
+        kill(pid, SIGTERM) == 0
     }
 
     func reveal(_ f: StoredFinding) {

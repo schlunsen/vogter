@@ -92,7 +92,13 @@ pub fn assess_file_read(
             format!("{} read {}", reader.name(), area.label),
         )
         .detail(format!("{path} — reader is {}", reader.signing.describe()))
-        .from_exec(reader),
+        .from_exec(reader)
+        .advice(format!(
+            "Only the app that owns {} (or macOS itself) normally reads it. Info-stealing \
+             malware goes after exactly these files. If you don't recognise this program, quit \
+             it and change the passwords stored there.",
+            area.label
+        )),
     )
 }
 

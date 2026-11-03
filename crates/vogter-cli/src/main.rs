@@ -52,6 +52,8 @@ enum Command {
         #[arg(short = 'n', long, default_value_t = 30)]
         limit: u32,
     },
+    /// Everything known about one event (id from `vogter events`).
+    Show { id: i64 },
     /// Trust what a finding or activity is about, so it stops alerting.
     Trust {
         /// Finding key from `vogter findings`.
@@ -114,6 +116,7 @@ fn main() -> Result<()> {
         Command::Ack { key } => client::ack(key)?,
         Command::ScanNow => client::scan_now()?,
         Command::Events { limit } => client::events(limit)?,
+        Command::Show { id } => client::show(id)?,
         Command::Trust {
             key,
             event,

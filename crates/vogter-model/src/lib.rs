@@ -4,6 +4,8 @@
 //! layer turns a snapshot into [`Finding`]s. Everything here is plain data so it
 //! can cross process boundaries (daemon -> app) as JSON.
 
+pub mod redact;
+
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -426,6 +428,9 @@ pub struct Activity {
     pub kind: ActivityKind,
     pub severity: Severity,
     pub summary: String,
+    /// What this means and what to do about it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub advice: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -444,12 +449,18 @@ impl Activity {
             kind,
             severity,
             summary: summary.into(),
+            advice: None,
             detail: None,
             pid: None,
             process: None,
             path: None,
             signing: None,
         }
+    }
+
+    pub fn advice(mut self, a: impl Into<String>) -> Self {
+        self.advice = Some(a.into());
+        self
     }
 
     pub fn detail(mut self, d: impl Into<String>) -> Self {

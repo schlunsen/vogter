@@ -1,8 +1,33 @@
 import Foundation
 import UserNotifications
 
-/// Posts user notifications for events that deserve attention.
-final class Notifier {
+extension Notification.Name {
+    /// Posted with `object: eventID (Int64)` when the user clicks an alert notification.
+    static let vogterShowEvent = Notification.Name("vogterShowEvent")
+}
+
+/// Posts user notifications for events that deserve attention, and routes
+/// clicks on them back into the app.
+final class Notifier: NSObject, UNUserNotificationCenterDelegate {
+    override init() {
+        super.init()
+        UNUserNotificationCenter.current().delegate = self
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        if let id = response.notification.request.content.userInfo["eventID"] as? Int64 {
+            DispatchQueue.main.async { NotificationCenter.default.post(name: .vogterShowEvent, object: id) }
+        }
+        completionHandler()
+    }
+
+    /// Show banners even while Vogter is the active app.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
+    }
+
     /// New findings below this severity don't notify.
     var minimumSeverity: Severity = .medium
 
@@ -37,6 +62,7 @@ final class Notifier {
         default:
             return
         }
+        content.userInfo = ["eventID": event.id]
         let request = UNNotificationRequest(identifier: "vogter-\(event.id)", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
     }

@@ -63,6 +63,7 @@ fn parse(kind: LaunchKind, path: &Path) -> Result<LaunchItem, String> {
                 .map(str::to_string)
                 .collect()
         })
+        .map(vogter_model::redact::redact_args)
         .unwrap_or_default();
     let program = string("Program").or_else(|| arguments.first().cloned());
     let program_exists = program.as_deref().is_some_and(|p| Path::new(p).exists());

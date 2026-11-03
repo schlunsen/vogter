@@ -64,6 +64,13 @@ final class DecodingTests: XCTestCase {
         XCTAssertTrue(activities.contains { $0.kind == "process_started" && $0.severity >= .high })
     }
 
+    func testActivityAdvice() throws {
+        let json = #"{"type":"event","id":4,"at":1,"kind":"activity","activity":{"kind":"process_started","severity":"high","summary":"zsh: Decodes hidden (base64) code and runs it","advice":"Hidden (encoded) code is being run.","detail":"`zsh -c …`","pid":42,"process":"zsh","path":"/bin/zsh","signing":{"kind":"apple","identifier":"com.apple.zsh","notarized":false}}}"#
+        guard case let .event(e) = try decode(json), case let .activity(a) = e.kind else { return XCTFail() }
+        XCTAssertEqual(a.advice, "Hidden (encoded) code is being run.")
+        XCTAssertEqual(a.pid, 42)
+    }
+
     func testAwaySummary() throws {
         let json = #"{"type":"event","id":3,"at":1,"kind":"activity","activity":{"kind":"away_summary","severity":"medium","summary":"While you were away (2h 0m): 1 alert, 0 programs started","detail":"[medium] Failed sudo by x"}}"#
         guard case let .event(e) = try decode(json), case let .activity(a) = e.kind else { return XCTFail() }

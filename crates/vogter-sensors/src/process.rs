@@ -103,7 +103,7 @@ pub fn exec_info(pid: i32) -> Option<ExecInfo> {
         ppid,
         uid: info.pbi_uid,
         signing: codesign::for_pid(pid, exists.then_some(path.as_str())),
-        args: args(pid).unwrap_or_default(),
+        args: vogter_model::redact::redact_args(args(pid).unwrap_or_default()),
         parent_path: pidpath(ppid).ok().filter(|p| !p.is_empty()),
         path,
     })

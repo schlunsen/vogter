@@ -125,6 +125,11 @@ fn describe(path: &Path, change: Change) -> Activity {
         ActivityKind::PersistenceChanged,
         severity,
         format!("Startup item {verb}: {name}"),
+    )
+    .advice(
+        "Startup items run automatically at login or boot. That's how apps keep helpers \
+         running, and how malware survives a restart. Fine if you just installed or updated \
+         something; Vogter rescans and shows what it runs under Findings.",
     );
     a.path = Some(path.display().to_string());
     a

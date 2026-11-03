@@ -23,8 +23,9 @@ const ERR_SUCCESS: OSStatus = 0;
 const ERR_SEC_CS_UNSIGNED: OSStatus = -67062;
 /// kSecCSSigningInformation
 const CS_SIGNING_INFORMATION: u32 = 1 << 1;
-/// kSecCSBasicValidateOnly: check the signature itself, skip hashing every resource.
-const CS_BASIC_VALIDATE_ONLY: u32 = (1 << 1) | (1 << 2);
+/// kSecCSDoNotValidateResources: verify the signature and the executable's
+/// contents, but skip hashing every resource file in a bundle (slow for big apps).
+const CS_SKIP_RESOURCES: u32 = 1 << 2;
 /// kSecCodeSignatureAdhoc
 const SIG_FLAG_ADHOC: i64 = 0x2;
 
@@ -117,7 +118,7 @@ impl Code {
             if self.dynamic {
                 SecCodeCheckValidity(self.raw, 0, req)
             } else {
-                SecStaticCodeCheckValidity(self.raw, CS_BASIC_VALIDATE_ONLY, req)
+                SecStaticCodeCheckValidity(self.raw, CS_SKIP_RESOURCES, req)
             }
         }
     }
@@ -200,15 +201,27 @@ impl Code {
 
 /// Signature of a running process, as the kernel sees it. Falls back to the
 /// on-disk executable if the dynamic lookup is refused.
+///
+/// A failed *dynamic* check is not proof of tampering: it also fails for a
+/// process caught mid-launch or while exiting (seen on valid Apple tools such
+/// as `git` and `sysctl`). So "invalid" is only reported when the file on disk
+/// fails too.
 pub fn for_pid(pid: i32, path: Option<&str>) -> Signing {
     // SAFETY: framework constant.
     let key = unsafe { CFString::wrap_under_get_rule(kSecGuestAttributePid) };
-    if let Some(signing) = guest(key, CFNumber::from(pid).as_CFType()) {
-        return signing;
-    }
-    match path {
-        Some(p) => for_path(p),
-        None => Signing::unknown(),
+    let dynamic = guest(key, CFNumber::from(pid).as_CFType());
+    match (dynamic, path) {
+        (Some(d), Some(p)) if matches!(d.kind, SignatureKind::Invalid | SignatureKind::Unknown) => {
+            let on_disk = for_path(p);
+            if on_disk.kind == SignatureKind::Unknown {
+                d
+            } else {
+                on_disk
+            }
+        }
+        (Some(d), _) => d,
+        (None, Some(p)) => for_path(p),
+        (None, None) => Signing::unknown(),
     }
 }
 
@@ -275,6 +288,35 @@ mod tests {
     #[test]
     fn system_binary_is_apple() {
         assert_eq!(for_path("/bin/ls").kind, SignatureKind::Apple);
+    }
+
+    #[test]
+    fn modified_binary_is_invalid() {
+        let dir = std::env::temp_dir().join(format!("vogter-cs-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let copy = dir.join("ls");
+        std::fs::copy("/bin/ls", &copy).unwrap();
+        // Flip a byte in the middle of every arm64 slice of this universal binary.
+        // Only the slice this Mac runs is checked, and there can be several
+        // (arm64e, arm64e.x1), so tamper with all of them.
+        let mut bytes = std::fs::read(&copy).unwrap();
+        let be = |b: &[u8], o: usize| u32::from_be_bytes(b[o..o + 4].try_into().unwrap()) as usize;
+        assert_eq!(be(&bytes, 0), 0xcafe_babe, "expected a universal binary");
+        let targets: Vec<usize> = (0..be(&bytes, 4))
+            .map(|n| 8 + n * 20)
+            .filter(|&o| be(&bytes, o) == 0x0100_000c) // CPU_TYPE_ARM64
+            .map(|o| be(&bytes, o + 8) + be(&bytes, o + 12) / 2)
+            .collect();
+        assert!(!targets.is_empty(), "no arm64 slice");
+        for i in targets {
+            bytes[i] ^= 0xff;
+        }
+        std::fs::write(&copy, bytes).unwrap();
+        assert_eq!(
+            for_path(copy.to_str().unwrap()).kind,
+            SignatureKind::Invalid
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

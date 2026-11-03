@@ -66,6 +66,7 @@ struct Activity: Codable, Hashable {
     var kind: String
     var severity: Severity
     var summary: String
+    var advice: String?
     var detail: String?
     var pid: Int32?
     var process: String?

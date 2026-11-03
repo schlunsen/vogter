@@ -65,13 +65,24 @@ struct MenuView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Recent alerts").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             ForEach(model.recentAlerts.prefix(4)) { e in
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: e.symbol).foregroundStyle(e.severity?.color ?? .secondary).frame(width: 16)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(e.text).font(.callout).lineLimit(2)
-                        Text(relativeTime(e.at)).font(.caption2).foregroundStyle(.tertiary)
+                Button {
+                    model.select(eventID: e.id)
+                    openWindow(id: "main")
+                    NSApp.activate(ignoringOtherApps: true)
+                } label: {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: e.symbol).foregroundStyle(e.severity?.color ?? .secondary).frame(width: 16)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(e.text).font(.callout).lineLimit(2).multilineTextAlignment(.leading)
+                            Text(relativeTime(e.at)).font(.caption2).foregroundStyle(.tertiary)
+                        }
+                        Spacer(minLength: 4)
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                     }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .help("Show details and actions")
             }
         }
     }

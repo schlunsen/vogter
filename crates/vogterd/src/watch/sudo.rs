@@ -74,7 +74,17 @@ pub fn parse(msg: &str) -> Option<Activity> {
         // `sudo -n` without cached credentials logs this; it's a failed attempt, not an attack.
         Some(p) => (Severity::Medium, format!("Failed sudo by {user}: {p}")),
     };
-    Some(Activity::new(ActivityKind::Sudo, severity, summary).detail(command))
+    let advice = if problem.is_some() {
+        "Someone tried to run a command as administrator and failed. Fine if that was you \
+         mistyping your password; repeated failures you didn't cause are worth looking into."
+    } else {
+        "A command ran with administrator rights. Fine if you just used sudo yourself."
+    };
+    Some(
+        Activity::new(ActivityKind::Sudo, severity, summary)
+            .detail(command)
+            .advice(advice),
+    )
 }
 
 #[cfg(test)]

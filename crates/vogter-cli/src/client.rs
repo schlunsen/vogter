@@ -162,6 +162,36 @@ pub fn events(limit: u32) -> Result<()> {
     Ok(())
 }
 
+pub fn show(id: i64) -> Result<()> {
+    let Message::Events { events } = Conn::open()?.call(Request::Events { limit: 1000 })? else {
+        bail!("unexpected reply")
+    };
+    let Some(e) = events.into_iter().find(|e| e.id == id) else {
+        bail!("no event #{id} among the last 1000")
+    };
+    println!("#{} {}", e.id, describe(&e));
+    if let Event::Activity { activity: a } = &e.event {
+        if let Some(advice) = &a.advice {
+            println!("\nWhat this means:\n  {advice}");
+        }
+        println!();
+        if let Some(p) = &a.process {
+            println!(
+                "program:   {p}{}",
+                a.pid.map(|p| format!(" (pid {p})")).unwrap_or_default()
+            );
+        }
+        if let Some(s) = &a.signing {
+            println!("signature: {}", s.describe());
+        }
+        if let Some(p) = &a.path {
+            println!("location:  {p}");
+        }
+        println!("\nTrust it:  vogter trust --event {id}");
+    }
+    Ok(())
+}
+
 pub fn trust(finding_key: Option<String>, event_id: Option<i64>, all_checks: bool) -> Result<()> {
     if finding_key.is_none() && event_id.is_none() {
         bail!("give a finding key (vogter findings) or --event <id> (vogter events)");

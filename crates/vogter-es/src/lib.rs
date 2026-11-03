@@ -203,7 +203,7 @@ fn main_event(msg: &Message, tx: &Sender<EsEvent>) {
     match event {
         Event::NotifyExec(exec) => {
             let target = exec.target();
-            let args = exec.args().map(s).collect();
+            let args = vogter_model::redact::redact_args(exec.args().map(s).collect());
             send(EsEvent::Exec(exec_info(
                 &target,
                 args,
