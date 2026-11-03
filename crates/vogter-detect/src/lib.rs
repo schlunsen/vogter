@@ -8,6 +8,7 @@ mod browser;
 pub mod downloads;
 mod exec;
 mod files;
+mod takeover;
 pub mod trust;
 
 pub use exec::assess_exec;
@@ -108,6 +109,7 @@ pub fn assess(snap: &Snapshot) -> Vec<Finding> {
             source: None,
         });
     }
+    out.extend(takeover::assess(snap));
     out.extend(health(snap));
     out.extend(browser::assess(&snap.browser_extensions));
 

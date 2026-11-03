@@ -6,6 +6,7 @@
 
 pub mod download;
 pub mod redact;
+pub mod takeover;
 
 use serde::{Deserialize, Serialize};
 
@@ -213,6 +214,9 @@ pub struct Snapshot {
     /// Extensions installed in the watched user's browsers.
     #[serde(default)]
     pub browser_extensions: Vec<BrowserExtension>,
+    /// Shell startup files, SSH keys, hosts, sudoers, profiles, hooks, extensions.
+    #[serde(default)]
+    pub takeover: takeover::Takeover,
     /// Sensors that failed or ran with reduced visibility.
     pub sensor_errors: Vec<SensorError>,
 }

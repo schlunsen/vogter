@@ -20,10 +20,11 @@ pub fn launch_items(errors: &mut Vec<(String, String)>) -> Vec<LaunchItem> {
             PathBuf::from("/Library/LaunchAgents"),
         ),
     ];
-    if let Ok(home) = std::env::var("HOME") {
+    // The console user's agents (as root, $HOME would be /var/root).
+    if let Some(user) = crate::user::target() {
         dirs.push((
             LaunchKind::UserAgent,
-            Path::new(&home).join("Library/LaunchAgents"),
+            Path::new(&user.home).join("Library/LaunchAgents"),
         ));
     }
 

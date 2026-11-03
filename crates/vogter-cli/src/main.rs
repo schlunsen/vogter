@@ -82,6 +82,21 @@ enum Section {
     Health,
     #[value(alias = "browser_extensions")]
     BrowserExtensions,
+    /// Shell startup files (commands only, secrets redacted).
+    Shell,
+    /// SSH authorized_keys.
+    Ssh,
+    Hosts,
+    /// sudo rules (root only).
+    Sudoers,
+    /// Configuration profiles (Mac-wide ones need root).
+    Profiles,
+    /// Login and logout hooks.
+    Hooks,
+    /// System and kernel extensions.
+    Extensions,
+    /// Background Task Management items (root only).
+    Btm,
 }
 
 fn main() -> Result<()> {
@@ -110,6 +125,17 @@ fn main() -> Result<()> {
                 Some(Section::Listeners) => serde_json::to_value(&snap.listeners)?,
                 Some(Section::Health) => serde_json::to_value(&snap.health)?,
                 Some(Section::BrowserExtensions) => serde_json::to_value(&snap.browser_extensions)?,
+                Some(Section::Shell) => serde_json::to_value(&snap.takeover.shell_files)?,
+                Some(Section::Ssh) => serde_json::to_value(&snap.takeover.ssh_keys)?,
+                Some(Section::Hosts) => serde_json::to_value(&snap.takeover.hosts)?,
+                Some(Section::Sudoers) => serde_json::to_value(&snap.takeover.sudoers)?,
+                Some(Section::Profiles) => serde_json::to_value(&snap.takeover.profiles)?,
+                Some(Section::Hooks) => serde_json::to_value(&snap.takeover.login_hooks)?,
+                Some(Section::Extensions) => serde_json::json!({
+                    "system": snap.takeover.system_extensions,
+                    "kernel": snap.takeover.kernel_extensions,
+                }),
+                Some(Section::Btm) => serde_json::to_value(&snap.takeover.background_items)?,
             };
             println!("{}", serde_json::to_string_pretty(&value)?);
         }

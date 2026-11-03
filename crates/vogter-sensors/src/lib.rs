@@ -13,6 +13,7 @@ pub mod health;
 pub mod network;
 pub mod persistence;
 pub mod process;
+pub mod takeover;
 pub mod tcc;
 pub mod user;
 
@@ -88,7 +89,11 @@ pub fn snapshot() -> Snapshot {
         }
     }
 
+    let (takeover, takeover_errors) = takeover::collect();
+    errors.extend(takeover_errors);
+
     snap.sensor_errors = errors;
+    snap.takeover = takeover;
     snap.listeners = network::collect(&processes);
     snap.processes = processes;
     snap.event_taps = event_taps;

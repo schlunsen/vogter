@@ -6,6 +6,7 @@
 
 pub mod browser;
 pub mod downloads;
+mod footholds;
 pub mod fs;
 pub mod procs;
 pub mod session;
