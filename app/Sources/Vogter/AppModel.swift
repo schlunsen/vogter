@@ -36,11 +36,21 @@ final class AppModel {
     private var connection: DaemonConnection?
     private var pollTimer: Timer?
     private var retryTimer: Timer?
-    private let notifier = Notifier()
+    /// Nil when not connecting (screenshot mode): creating one touches the notification center.
+    private let notifier: Notifier?
+    /// When set, `isRunning` answers from this instead of the real process table (screenshot mode).
+    var simulatedRunningPIDs: Set<Int32>?
 
-    init() {
-        notifier.requestAuthorization()
-        connect()
+    /// `connect: false` builds an empty, offline model that never talks to vogterd or
+    /// asks for notification permission (used to render screenshots from demo data).
+    init(connect: Bool = true) {
+        guard connect else {
+            notifier = nil
+            return
+        }
+        notifier = Notifier()
+        notifier?.requestAuthorization()
+        self.connect()
         // Status carries live mic/camera state and counts; keep it fresh.
         pollTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.connection?.send(["type": "status"]) }
@@ -116,6 +126,7 @@ final class AppModel {
 
     /// Whether `pid` is still the program at `path` (PIDs get reused).
     func isRunning(pid: Int32, path: String?) -> Bool {
+        if let simulated = simulatedRunningPIDs { return simulated.contains(pid) }
         guard kill(pid, 0) == 0 || errno == EPERM else { return false }
         guard let path else { return true }
         var buf = [CChar](repeating: 0, count: 4096)
@@ -194,7 +205,7 @@ final class AppModel {
         case let .event(e):
             events.insert(e, at: 0)
             if events.count > 500 { events.removeLast(events.count - 500) }
-            notifier.notify(for: e)
+            notifier?.notify(for: e)
             switch e.kind {
             case .scanCompleted, .newFinding, .resolved:
                 connection?.send(["type": "findings"])

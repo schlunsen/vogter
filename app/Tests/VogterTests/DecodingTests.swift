@@ -90,4 +90,17 @@ final class DecodingTests: XCTestCase {
     func testUnknownTypesDoNotThrow() throws {
         guard case .unknown("future") = try decode(#"{"type":"future"}"#) else { return XCTFail() }
     }
+
+    /// The screenshot demo data goes through the same decoders, and the offline model
+    /// never connects.
+    @MainActor
+    func testDemoModel() {
+        let model = Demo.model()
+        XCTAssertEqual(model.findings.count, 3)
+        XCTAssertEqual(model.trustRules.count, Int(model.status?.trustRules ?? 0))
+        XCTAssertEqual(model.selectedEvent?.severity, .critical)
+        XCTAssertNotNil(model.selectedEvent.flatMap { if case let .activity(a) = $0.kind { a.advice } else { nil } })
+        XCTAssertEqual(model.recentAlerts.count, 3)
+        XCTAssertTrue(model.isRunning(pid: Demo.runningPID, path: nil))
+    }
 }

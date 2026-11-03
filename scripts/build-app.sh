@@ -21,6 +21,17 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources"
 cp "$ROOT/app/Info.plist" "$APP/Contents/Info.plist"
 cp "$BIN_DIR/Vogter" "$APP/Contents/MacOS/Vogter"
+
+# App icon: app/AppIcon.png (1024 px, artwork on Apple's 824 px grid) -> AppIcon.icns.
+ICONSET="$(mktemp -d)/AppIcon.iconset"
+mkdir -p "$ICONSET"
+for size in 16 32 128 256 512; do
+    sips -z "$size" "$size" "$ROOT/app/AppIcon.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+    sips -z $((size * 2)) $((size * 2)) "$ROOT/app/AppIcon.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+rm -rf "$(dirname "$ICONSET")"
+
 # Helpers live apart from MacOS/: the filesystem is case-insensitive, so `vogter` would overwrite `Vogter`.
 cp "$ROOT/target/release/vogterd" "$ROOT/target/release/vogter" "$APP/Contents/Helpers/"
 

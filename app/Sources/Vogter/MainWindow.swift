@@ -16,7 +16,7 @@ struct MainWindow: View {
     }
 }
 
-private struct FindingsTab: View {
+struct FindingsTab: View {
     @Environment(AppModel.self) private var model
     @State private var minimum: Severity = .low
 
@@ -42,7 +42,7 @@ private struct FindingsTab: View {
     }
 }
 
-private struct ActivityTab: View {
+struct ActivityTab: View {
     @Environment(AppModel.self) private var model
     @State private var alertsOnly = false
 
@@ -187,7 +187,7 @@ private struct EventDetail: View {
     }
 }
 
-private struct TrustedTab: View {
+struct TrustedTab: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
@@ -215,7 +215,7 @@ private struct TrustedTab: View {
     }
 }
 
-private struct StatusTab: View {
+struct StatusTab: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
