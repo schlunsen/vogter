@@ -5,6 +5,7 @@
 
 pub mod av;
 pub mod codesign;
+pub mod downloads;
 pub mod eventtap;
 pub mod hash;
 pub mod health;

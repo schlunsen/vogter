@@ -4,6 +4,7 @@
 //! layer turns a snapshot into [`Finding`]s. Everything here is plain data so it
 //! can cross process boundaries (daemon -> app) as JSON.
 
+pub mod download;
 pub mod redact;
 
 use serde::{Deserialize, Serialize};
@@ -496,6 +497,8 @@ pub enum ActivityKind {
     MalwareDetected,
     /// Summary of what happened while the screen was locked.
     AwaySummary,
+    /// A program, installer or disk image just landed in Downloads.
+    Download,
 }
 
 /// Something that happened, as opposed to a [`Finding`] (a state that exists).

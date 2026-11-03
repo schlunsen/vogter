@@ -4,6 +4,7 @@
 //! seen and why it matters. Severity leans on code signing, because on macOS
 //! "who vouches for this code" is the strongest cheap signal available.
 
+pub mod downloads;
 mod exec;
 mod files;
 pub mod trust;
