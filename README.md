@@ -1,98 +1,118 @@
+<p align="center">
+  <img src="docs/images/hero.jpg" alt="Soft mist over calm hills and a still lake, with a single smooth stone resting on the water" width="100%">
+</p>
+
 <div align="center">
 
-<img src="docs/images/icon.png" width="128" height="128" alt="Vogter icon">
+<img src="docs/images/icon.png" width="112" height="112" alt="Vogter icon">
 
 # Vogter
 
-**A watchful guard for your Mac.** It spots keyloggers, sneaky startup items,
-info-stealers and anyone using your Mac while you're away.
+*A quiet guardian for your Mac.*
 
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-<!-- CI badge: the workflow lands with the release automation. -->
-![CI](https://github.com/schlunsen/vogter/actions/workflows/ci.yml/badge.svg)
-![macOS 14+](https://img.shields.io/badge/macOS-14%2B-lightgrey.svg)
+Vogter keeps a gentle eye on your Mac, noticing keyloggers, sneaky startup items,
+info-stealers, and anyone using it while you're away. When everything is calm it stays out of
+your way. When something deserves a look, it tells you plainly what it saw and what you can do.
+
+[![Release](https://img.shields.io/github/v/release/schlunsen/vogter?color=A9BFA8&label=release)](https://github.com/schlunsen/vogter/releases/latest)
+[![CI](https://github.com/schlunsen/vogter/actions/workflows/ci.yml/badge.svg)](https://github.com/schlunsen/vogter/actions/workflows/ci.yml)
+[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-BFD0DE)](#install)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-C9BEDC)](LICENSE)
 
 </div>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.png">
-  <img src="docs/images/hero-light.png" alt="Vogter's main window showing an alert about a fake password dialog, with the menu bar popover listing recent alerts and findings">
+  <img src="docs/images/hero-light.png" alt="Vogter's main window showing the details of an alert, next to the menu bar popover with recent alerts and findings">
 </picture>
 
-Vogter lives in your menu bar. The shield turns orange or red when something needs a look,
-and a mic or camera icon appears while either is in use. You get a notification when
-something new and important happens, with a plain-language explanation of what it means and
-what to do about it. Everything runs on your Mac, and nothing is sent anywhere.
+<sub>Screenshots use made-up demo data (`scripts/screenshots.sh`).</sub>
 
-> The screenshots are generated from made-up demo data (`scripts/screenshots.sh`).
+<p align="center"><img src="docs/images/divider.svg" alt="" width="60%"></p>
 
-## What it watches
+## A calm presence in your menu bar
+
+Vogter lives as a small icon in your menu bar. Most of the time it simply rests there.
+
+- When something **needs a look**, the icon changes and you get a notification that explains,
+  in plain words, what happened and whether it's likely fine.
+- While your **microphone or camera** is in use, a small indicator appears next to it.
+- **Everything happens on your Mac.** Nothing is sent anywhere.
+
+## What it gently watches
 
 <table>
   <tr>
-    <td width="33%"><img src="docs/images/keystrokes.jpg" alt=""></td>
-    <td width="33%"><img src="docs/images/persistence.jpg" alt=""></td>
-    <td width="33%"><img src="docs/images/away.jpg" alt=""></td>
+    <td width="25%"><img src="docs/images/watching.jpg" alt="A stone lantern in a raked-sand garden"></td>
+    <td width="25%"><img src="docs/images/startup.jpg" alt="Balanced stacked stones on raked sand"></td>
+    <td width="25%"><img src="docs/images/listening.jpg" alt="A drop falling into a still bowl of water"></td>
+    <td width="25%"><img src="docs/images/away.jpg" alt="A crescent moon fading into dawn over still water"></td>
   </tr>
   <tr>
-    <td align="center">Who can read your keystrokes</td>
-    <td align="center">What starts with your Mac</td>
-    <td align="center">What happened while you were away</td>
+    <td align="center"><sub>Who can read your keystrokes</sub></td>
+    <td align="center"><sub>What starts with your Mac</sub></td>
+    <td align="center"><sub>When the mic or camera listens</sub></td>
+    <td align="center"><sub>What happened while you were away</sub></td>
   </tr>
 </table>
 
-- **Keyloggers.** Any program that listens to your keyboard, and apps you've given *Input
-  Monitoring* or *Accessibility* permission. A signed, notarized keyboard tool is flagged
-  lightly; an unsigned one, or one running from a Downloads or temp folder, loudly.
-- **Privacy permissions.** Which apps may record your screen, read all your files, or use your
-  camera or microphone, and whether those apps are properly signed.
-- **Startup items.** Things that launch at login or boot: scripts, unsigned programs, and items
-  pretending to be Apple's.
-- **Suspicious programs, the moment they start.** Fake password dialogs (the way info-stealers
-  like AMOS get your password), Keychain dumping, `curl … | sh`, hidden encoded commands,
-  turning Gatekeeper off, removing the "downloaded from the internet" flag, new user accounts,
-  scripts typing into other apps, unsigned programs in temp or Downloads folders.
-- **Microphone and camera.** A notification as soon as either turns on, with the name of the
-  app using the microphone.
-- **Someone at your Mac.** Every `sudo` (and failed password attempts), screen lock and unlock,
-  and a **"While you were away"** summary when you unlock: *"While you were away (2h 10m): 1
-  alert, 3 programs started"*.
-- **macOS protections.** System Integrity Protection, Gatekeeper, FileVault and the firewall
-  being off. **Remote Login (SSH)** or **Screen Sharing** switched on. Programs accepting
-  connections from the network.
+- **Your keyboard.** Programs that listen to your keystrokes, and apps you've given *Input
+  Monitoring* or *Accessibility* permission. A signed keyboard tool you installed gets a soft
+  mention. An unsigned one, or one running from a Downloads or temp folder, gets a clear one.
+- **Your privacy permissions.** Which apps may record your screen, read all your files, or use
+  your camera and microphone, and whether those apps are properly signed.
+- **What starts with your Mac.** Things that launch at login or boot: scripts, unsigned
+  programs, and items pretending to be Apple's.
+- **Programs as they start.** Fake password dialogs (the way info-stealers like AMOS ask for
+  your password), Keychain dumping, `curl … | sh`, hidden encoded commands, Gatekeeper being
+  turned off, the "downloaded from the internet" flag being removed, new user accounts, scripts
+  typing into other apps, and unsigned programs in temp or Downloads folders.
+- **Your microphone and camera.** A notification as soon as either turns on, naming the app
+  that's using the microphone.
+- **Your time away.** Every `sudo` (and failed password attempts), screen lock and unlock, and a
+  short summary when you come back: *"While you were away (2h 10m): 1 alert, 3 programs
+  started"*.
+- **macOS's own protections.** System Integrity Protection, Gatekeeper, FileVault and the
+  firewall, plus whether **Remote Login (SSH)** or **Screen Sharing** is switched on, and
+  programs accepting connections from the network.
 
-With Apple's Endpoint Security (see [below](#first-run)), Vogter also sees programs reading
-your Keychain, browser passwords and cookies, SSH keys and Messages, plus SSH logins,
+With Apple's Endpoint Security (see [below](#first-run)), Vogter can also see programs reading
+your Keychain, browser passwords and cookies, SSH keys and Messages, along with SSH logins,
 screen-sharing sessions and XProtect malware detections.
 
-## What you can do with an alert
+<p align="center"><img src="docs/images/divider.svg" alt="" width="60%"></p>
+
+## When something needs a look
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/activity-dark.png">
-  <img src="docs/images/activity-light.png" alt="The Activity tab with the details of a critical alert: what this means, the program, its signature and location, the command line, and Trust, Show in Finder, Copy details and Quit program buttons">
+  <img src="docs/images/activity-light.png" alt="The Activity tab with the details of an alert: what this means, the program, its signature and location, the command line, and Trust, Show in Finder, Copy details and Quit program buttons">
 </picture>
 
-Click an alert in the menu, or the notification, and the main window opens on it:
+Click an alert in the menu or in the notification, and Vogter opens it for you:
 
-- **What this means**: why this is worth a look, and when it's fine.
-- **Program**: what ran, whether it's still running, who signed it, where it lives, the exact
-  command and what started it.
-- **Trust…**: "I know this app, stop telling me." Choose this kind of alert, or all alerts.
-- **Show in Finder**, **Copy details**, and **Quit program…** (asks it to quit, like Activity
-  Monitor) while it's still running.
+- **What this means.** Why it's worth a look, and when it's perfectly fine.
+- **The program.** What ran, whether it's still running, who signed it, where it lives, the
+  exact command, and what started it.
+- **Trust…** "I know this app, you can relax about it." Choose this kind of alert, or all of
+  them.
+- **Show in Finder**, **Copy details**, and **Quit program…** (a polite request to quit, like
+  Activity Monitor) while it's still running.
 
-On the **Findings** tab (things that are *currently* true, like a keyboard tap or a startup
-item), the check mark means "I know about this one" and hides it until it goes away and comes back.
+On the **Findings** tab, which lists things that are true *right now* such as a keyboard tap or
+a startup item, the check mark means "I know about this one". It stays hidden until it goes
+away and comes back.
 
-**Trust is hard to fake.** A signed app is trusted by its developer's Apple ID, which a lookalike
-can't copy. An unsigned file is trusted by its exact contents, so if it's swapped for something
-else, trust ends. Apple's own tools (like `bash`) are only ever trusted for one specific alert,
-since they can run anything. The **Trusted** tab lists your rules and lets you remove them.
+**Trust can't be borrowed.** A signed app is trusted by its developer's Apple ID, which a
+lookalike can't copy. An unsigned file is trusted by its exact contents, so if it's ever
+swapped for something else, the trust ends. Apple's own tools (like `bash`) are only trusted
+for one specific alert, since they can run anything. The **Trusted** tab shows your rules, and
+you can remove them at any time.
 
-**Vogter learns what's normal.** For the first week it quietly learns which programs you use.
-After that, a program running for the first time is noted. Programs you use all the time (20+
-runs over 3+ days) get their low and medium launch alerts toned down one level. High and
-critical alerts are never toned down.
+**Vogter learns your rhythm.** For the first week it quietly notes which programs you use.
+After that, a program running for the first time is mentioned. Programs you use all the time
+(20+ runs over 3+ days) have their low and medium launch alerts softened by one level. High and
+critical alerts are never softened.
 
 <table>
   <tr>
@@ -100,25 +120,35 @@ critical alerts are never toned down.
     <td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/status-dark.png"><img src="docs/images/status-light.png" alt="Status tab: service version, scan interval, realtime sources and Endpoint Security state"></picture></td>
   </tr>
   <tr>
-    <td align="center">Findings</td>
-    <td align="center">Status</td>
+    <td align="center"><sub>Findings</sub></td>
+    <td align="center"><sub>Status</sub></td>
   </tr>
 </table>
 
+<p align="center"><img src="docs/images/divider.svg" alt="" width="60%"></p>
+
 ## Install
 
-### Homebrew (coming with the first release, v0.1.0)
+### Homebrew
 
 ```sh
 brew install --cask schlunsen/vogter/vogter   # the menu bar app
-brew install schlunsen/vogter/vogter          # the command-line tools
+brew install schlunsen/vogter/vogter          # the command-line tools and service
+brew services start vogter                    # start watching
 ```
 
-See [docs/homebrew.md](docs/homebrew.md) for details.
+The app is signed with a Developer ID and notarized by Apple, so it opens without warnings.
+More in [docs/homebrew.md](docs/homebrew.md).
+
+### Download
+
+Grab `Vogter-<version>-macos-arm64.zip` from the
+[latest release](https://github.com/schlunsen/vogter/releases/latest), unzip it, and move
+**Vogter.app** to your Applications folder.
 
 ### Build from source
 
-You need macOS 14 or later, [Rust](https://rustup.rs) 1.88+ (edition 2024) and Xcode 16+
+You'll need macOS 14 or later, [Rust](https://rustup.rs) 1.88+ (edition 2024) and Xcode 16+
 (Swift 6 tools).
 
 ```sh
@@ -130,40 +160,37 @@ cp -R build/Vogter.app /Applications/
 ## First run
 
 Vogter has two parts: a background **service** (`vogterd`) that does the watching, and the
-**menu bar app** that shows you what it found. The app connects to the service automatically.
+**menu bar app** where you see what it noticed. The app finds the service on its own.
 
-1. **Start the service.** The recommended way is as root at boot, so it can see every process:
+1. **Start the service.** With Homebrew, run `brew services start vogter`. To have it run as
+   root at boot, so it can see every process, use:
 
    ```sh
    sudo scripts/install-daemon.sh            # after copying Vogter.app to /Applications
    ```
 
-   Or just for yourself, without root (it sees only your own programs):
-
-   ```sh
-   /Applications/Vogter.app/Contents/Helpers/vogterd     # or: cargo run --release -p vogterd
-   ```
-
-2. **Grant Full Disk Access**, so Vogter can read which apps have privacy permissions:
+2. **Grant Full Disk Access**, so Vogter can see which apps hold privacy permissions. Open
    **System Settings → Privacy & Security → Full Disk Access**, click **+**, press
-   <kbd>⌘</kbd><kbd>⇧</kbd><kbd>G</kbd> and enter
-   `/Applications/Vogter.app/Contents/Helpers/vogterd`. If you run the service from a
-   terminal, add the terminal app instead. Restart the service afterwards
-   (`sudo scripts/install-daemon.sh` again).
+   <kbd>⌘</kbd><kbd>⇧</kbd><kbd>G</kbd> and enter the path to `vogterd`. For the app
+   install that's `/Applications/Vogter.app/Contents/Helpers/vogterd`; for Homebrew, use the
+   path printed by `realpath "$(brew --prefix)/bin/vogterd"`. Then restart the service.
 
 3. **Open Vogter** and **allow notifications** when asked.
 
 The first scan is a baseline: what's already on your Mac is listed but doesn't alert you.
-After that, only *changes* do. To remove the service: `sudo scripts/install-daemon.sh uninstall`.
+After that, only *changes* do. To remove the root service, run
+`sudo scripts/install-daemon.sh uninstall`.
 
-**Endpoint Security**, Apple's kernel event feed, gives Vogter its sharpest view (every program
-launch, reads of secret files, logins). It needs a special entitlement from Apple, which this
-project doesn't have yet, so Vogter currently uses its fallback watchers. The Status tab says
-which are active. See [docs/endpoint-security.md](docs/endpoint-security.md).
+**Endpoint Security**, Apple's kernel event feed, would give Vogter its clearest view: every
+program launch, reads of secret files, logins. It needs a special entitlement from Apple that
+this project doesn't have yet, so for now Vogter uses its gentler fallback watchers. The
+Status tab shows which ones are active. See
+[docs/endpoint-security.md](docs/endpoint-security.md).
 
-## Command line
+## From the terminal
 
-`vogter` talks to the running service, except `scan` and `inventory`, which work on their own.
+`vogter` talks to the running service. The exceptions are `scan` and `inventory`, which work
+on their own.
 
 | Command | What it does |
 | --- | --- |
@@ -177,37 +204,41 @@ which are active. See [docs/endpoint-security.md](docs/endpoint-security.md).
 | `vogter untrust <id>` | Remove a trust rule |
 | `vogter ack <key>` | Hide a finding until it goes away and comes back |
 | `vogter watch` | Live event stream |
-| `vogter scan-now` | Ask the service to scan right away |
+| `vogter scan-now` | Ask the service to look right away |
 | `vogter inventory [processes\|taps\|tcc\|launchd\|cron\|listeners\|health]` | Raw sensor data as JSON |
 
-## Privacy
+<p align="center"><img src="docs/images/divider.svg" alt="" width="60%"></p>
 
-- **Everything stays on your Mac.** History is a SQLite database in
+## Your privacy
+
+- **Everything stays on your Mac.** History lives in a small SQLite database in
   `~/Library/Application Support/Vogter/` (or `/Library/Application Support/Vogter/` when the
   service runs as root). Vogter makes no network connections: no telemetry, no cloud lookups,
-  no updates phoning home.
-- **Secrets are scrubbed.** Passwords, tokens and API keys in command lines (`--password=…`,
-  `Authorization:` headers, `https://user:pass@…`, GitHub/AWS/Slack-style tokens) are replaced
-  with `[redacted]` before anything is stored or shown.
-- Only you (the user at the console) and root can talk to the service.
+  nothing phoning home.
+- **Secrets are wiped from what it records.** Passwords, tokens and API keys in command lines
+  (`--password=…`, `Authorization:` headers, `https://user:pass@…`, GitHub, AWS and Slack-style
+  tokens) are replaced with `[redacted]` before anything is stored or shown.
+- **Only you and root can talk to the service.** When it's signed, Vogter also only accepts
+  apps signed by the same developer.
 
-## Limitations
+## Honest limits
 
-- **Without Endpoint Security, very short-lived programs can be missed.** The fallback watcher
-  checks for new programs every second, so something that starts and exits faster than that may
-  not be seen. Reads of secret files and SSH logins aren't seen at all without it.
-- **The camera alert can't say which app** is using it (the microphone alert can).
+- **Without Endpoint Security, very brief programs can slip by.** The fallback watcher looks
+  for new programs every second, so something that starts and exits faster than that may go
+  unseen. Reads of secret files and SSH logins aren't visible at all without it.
+- **The camera alert can't yet say which app** is using it. The microphone alert can.
 - **Endpoint Security needs Apple's entitlement**, which takes a request to Apple and a paid
-  developer account. Until then, see [docs/endpoint-security.md](docs/endpoint-security.md) for
-  testing in a VM.
-- **It's not an antivirus.** Vogter doesn't scan files for known malware. It watches for
-  *behaviour* (spying, persistence, tampering). Keep macOS's built-in XProtect and Gatekeeper
-  on; Vogter tells you if they're off.
-- Early software (v0.1.0). Expect rough edges, and please [open an issue](https://github.com/schlunsen/vogter/issues).
+  developer account. Until then, [docs/endpoint-security.md](docs/endpoint-security.md)
+  explains how to test in a VM.
+- **It isn't an antivirus.** Vogter doesn't scan files for known malware. It watches for
+  *behaviour*: spying, persistence, tampering. Keep macOS's built-in XProtect and Gatekeeper on,
+  and Vogter will tell you if they're off.
+- **It's young software (v0.1).** Expect a few rough edges, and please
+  [open an issue](https://github.com/schlunsen/vogter/issues) when you find one.
 
 ## For developers
 
-Rust does the work and SwiftUI shows it:
+Rust does the watching and SwiftUI shows it:
 
 ```
 crates/vogter-model    shared types and secret redaction
@@ -226,24 +257,29 @@ cargo test                        # Rust: rules, store, protocol, redaction
 swift test --package-path app     # Swift: protocol decoding against captured daemon output
 cargo run --release -p vogterd    # run the service as your user
 scripts/screenshots.sh            # regenerate docs/images from demo data
+scripts/notarize.sh               # notarize a Developer ID build (see the script for setup)
 ```
 
-How the checks, realtime watchers, trust and learning work in detail, the socket security
-model, and why Vogter isn't built on Rustinel: [docs/design.md](docs/design.md).
+[docs/design.md](docs/design.md) explains how the checks, realtime watchers, trust and learning
+work, the socket security model, and why Vogter isn't built on Rustinel.
 
-### Roadmap
+### Where it's heading
 
 1. **Scanner** (done): one-shot `vogter scan`.
-2. **Service and app** (done): timed scans with history, change alerts, mic/camera alerts, menu bar app.
-3. **Realtime** (done): live program checks, startup and permission folder watching, sudo,
-   lock/unlock with an away summary. The Endpoint Security client is built and waits for Apple's entitlement.
+2. **Service and app** (done): timed scans with history, change alerts, mic and camera alerts,
+   the menu bar app.
+3. **Realtime** (done): live program checks, startup and permission folder watching, sudo, and
+   lock/unlock with an away summary. The Endpoint Security client is built and waits for
+   Apple's entitlement.
 4. **Trust and learning** (done).
-5. **More detection**: Sigma rules via `rsigma-eval`, YARA scanning of new binaries via `yara-x`.
-6. **Later**: Network Extension for per-app network control, notarized releases.
+5. **Releases** (done): notarized builds and a Homebrew tap.
+6. **Next:** Sigma rules via `rsigma-eval`, YARA scanning of new binaries via `yara-x`, and a
+   Network Extension for per-app network control.
 
-Ideas from [Objective-See](https://github.com/objective-see)'s tools (ideas only; they're GPL),
-[Santa](https://github.com/northpolesec/santa) and [Mac Monitor](https://github.com/Brandon7CC/mac-monitor).
+With gratitude to the ideas in [Objective-See](https://github.com/objective-see)'s tools (ideas
+only, since they're GPL), [Santa](https://github.com/northpolesec/santa) and
+[Mac Monitor](https://github.com/Brandon7CC/mac-monitor).
 
 ## License
 
-[Apache-2.0](LICENSE)
+[Apache-2.0](LICENSE). Illustrations were generated for this project and live in `docs/images/`.
