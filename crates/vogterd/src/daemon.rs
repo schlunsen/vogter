@@ -25,6 +25,8 @@ pub struct Daemon {
     realtime: Mutex<Realtime>,
     interval: Duration,
     as_root: bool,
+    /// This service's own binary and signature, so it doesn't report itself.
+    me: Option<(String, vogter_model::Signing)>,
 }
 
 /// What happened while the screen was locked.
@@ -70,7 +72,17 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 
 impl Daemon {
     pub fn new(store: Store, interval: Duration, as_root: bool, scan_tx: Sender<()>) -> Self {
+        let me = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.canonicalize().ok())
+            .map(|p| {
+                let path = p.display().to_string();
+                let signing =
+                    vogter_sensors::codesign::for_pid(std::process::id() as i32, Some(&path));
+                (path, signing)
+            });
         Daemon {
+            me,
             live: Mutex::default(),
             subscribers: Mutex::default(),
             scan_tx: Mutex::new(scan_tx),
@@ -277,6 +289,20 @@ impl Daemon {
         }
     }
 
+    /// A finding about this very service (its Full Disk Access grant, its
+    /// LaunchDaemon). Only if the file at that path still has our signature:
+    /// a replaced binary is reported like anything else.
+    fn is_self(&self, f: &vogter_model::Finding) -> bool {
+        let Some((path, signing)) = &self.me else {
+            return false;
+        };
+        f.path.as_deref() == Some(path.as_str()) && signing.kind != SignatureKind::Unknown && {
+            let on_disk = vogter_sensors::codesign::for_path(path);
+            (on_disk.kind, &on_disk.team_id, &on_disk.identifier)
+                == (signing.kind, &signing.team_id, &signing.identifier)
+        }
+    }
+
     fn trusted(&self, s: &Subject<'_>) -> bool {
         is_trusted(s, &lock(&self.trust), &sha256_file)
     }
@@ -456,6 +482,7 @@ impl Daemon {
         let snap = vogter_sensors::snapshot();
         let (findings, trusted): (Vec<_>, Vec<_>) = vogter_detect::assess(&snap)
             .into_iter()
+            .filter(|f| !self.is_self(f))
             .partition(|f| !self.trusted(&Subject::from(f)));
         let trusted_keys: std::collections::HashSet<String> =
             trusted.iter().map(|f| f.key()).collect();
