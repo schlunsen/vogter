@@ -5,14 +5,78 @@ struct MainWindow: View {
 
     var body: some View {
         @Bindable var model = model
-        TabView(selection: $model.selectedTab) {
-            FindingsTab().tabItem { Label("Findings", systemImage: "exclamationmark.shield") }.tag("findings")
-            ActivityTab().tabItem { Label("Activity", systemImage: "list.bullet.rectangle") }.tag("activity")
-            TrustedTab().tabItem { Label("Trusted", systemImage: "hand.thumbsup") }.tag("trusted")
-            StatusTab().tabItem { Label("Status", systemImage: "gauge") }.tag("status")
+        MainWindowContent(selection: $model.selectedTab)
+            .onAppear { model.refresh() }
+    }
+}
+
+/// The tab strip and the selected tab, on the calm background. Shared with the
+/// screenshot renderer, so the README shows exactly this.
+struct MainWindowContent: View {
+    @Binding var selection: String
+
+    static let tabs: [(id: String, title: String, symbol: String)] = [
+        ("findings", "Findings", "shield"),
+        ("activity", "Activity", "list.bullet"),
+        ("trusted", "Trusted", "hand.thumbsup"),
+        ("status", "Status", "gauge"),
+    ]
+
+    var body: some View {
+        VStack(spacing: 16) {
+            ZenTabBar(selection: $selection)
+            Group {
+                switch selection {
+                case "activity": ActivityTab()
+                case "trusted": TrustedTab()
+                case "status": StatusTab()
+                default: FindingsTab()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding()
-        .onAppear { model.refresh() }
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+        .padding(.bottom, 20)
+        .fontDesign(.rounded)
+        .tint(Theme.sage)
+        .zenBackground()
+    }
+}
+
+/// A soft segmented control: a translucent capsule with the selected tab raised.
+struct ZenTabBar: View {
+    @Binding var selection: String
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(MainWindowContent.tabs, id: \.id) { tab in
+                let selected = tab.id == selection
+                Button { selection = tab.id } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: tab.symbol).font(.system(size: 11, weight: .medium))
+                        Text(tab.title).font(.system(size: 12.5, weight: selected ? .semibold : .regular, design: .rounded))
+                    }
+                    .foregroundStyle(selected ? Theme.ink : Theme.inkSoft)
+                    .padding(.horizontal, 14)
+                    .frame(height: 26)
+                    .background {
+                        if selected {
+                            Capsule(style: .continuous)
+                                .fill(Theme.cardStrong)
+                                .overlay(Capsule(style: .continuous).fill(Theme.calmSoft))
+                                .overlay(Capsule(style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
+                                .shadow(color: Theme.shadow, radius: 3, y: 1)
+                        }
+                    }
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background(Theme.card, in: Capsule(style: .continuous))
+        .overlay(Capsule(style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
     }
 }
 
@@ -21,21 +85,35 @@ struct FindingsTab: View {
     @State private var minimum: Severity = .low
 
     var body: some View {
-        VStack(alignment: .leading) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Picker("Show", selection: $minimum) {
                     ForEach(Severity.allCases, id: \.self) { Text("\($0.label) and up").tag($0) }
                 }
                 .frame(width: 220)
                 Spacer()
-                Button("Scan now") { model.scanNow() }.disabled(!model.connected)
+                Button("Scan now") { model.scanNow() }
+                    .buttonStyle(SoftButtonStyle(prominent: true))
+                    .disabled(!model.connected)
             }
             if !model.connected {
-                NotRunningView().padding()
+                NotRunningView().zenCard(padding: 18).frame(maxWidth: 420, alignment: .leading)
                 Spacer()
             } else {
-                List(model.findings.filter { $0.severity >= minimum }) { f in
-                    FindingRow(finding: f)
+                let items = model.findings.filter { $0.severity >= minimum }
+                if items.isEmpty {
+                    CalmEmptyState(symbol: "leaf", title: "Nothing needs your attention",
+                                   message: "Breathe easy — Vogter keeps watching quietly.")
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 10) {
+                            ForEach(items) { f in
+                                FindingRow(finding: f).zenCard(padding: 14)
+                            }
+                        }
+                        .padding(8)
+                    }
+                    .padding(-8)
                 }
             }
         }
@@ -50,36 +128,47 @@ struct ActivityTab: View {
         @Bindable var model = model
         let items = model.events.filter { !alertsOnly || ($0.severity ?? .info) >= .low }
         HSplitView {
-            VStack(alignment: .leading, spacing: 6) {
-                Toggle("Alerts only", isOn: $alertsOnly).toggleStyle(.checkbox).font(.caption)
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Alerts only", isOn: $alertsOnly)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 11.5, design: .rounded))
+                    .foregroundStyle(Theme.inkSoft)
+                    .padding(.leading, 4)
                 List(items, selection: $model.selectedEventID) { e in
-                    HStack(alignment: .top) {
-                        Image(systemName: e.symbol)
-                            .frame(width: 20)
-                            .foregroundStyle(e.severity.map(\.color) ?? .secondary)
-                        Text(e.text).lineLimit(2)
+                    HStack(alignment: .top, spacing: 10) {
+                        Squircle(symbol: e.symbol, tint: e.severity.map(\.color) ?? Theme.inkFaint, size: 22)
+                        Text(e.text)
+                            .font(.system(size: 12.5, design: .rounded))
+                            .foregroundStyle(Theme.ink)
+                            .lineLimit(2)
+                            .padding(.top, 2)
                         Spacer()
-                        if let sev = e.severity, sev > .info { SeverityBadge(severity: sev) }
+                        if let sev = e.severity, sev > .info { SeverityBadge(severity: sev).padding(.top, 1) }
                         Text(Date(timeIntervalSince1970: TimeInterval(e.at)), style: .time)
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
+                            .foregroundStyle(Theme.inkFaint)
+                            .font(.system(size: 11, design: .rounded))
+                            .monospacedDigit()
+                            .padding(.top, 3)
                     }
+                    .padding(.vertical, 3)
                     .tag(e.id)
                 }
+                .scrollContentBackground(.hidden)
+                .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).strokeBorder(Theme.hairline, lineWidth: 0.5))
             }
+            .padding(.trailing, 10)
             .frame(minWidth: 320, idealWidth: 380)
 
             Group {
                 if let e = model.selectedEvent {
                     EventDetail(event: e).id(e.id)
                 } else {
-                    VStack(spacing: 8) {
-                        Image(systemName: "hand.point.left").font(.largeTitle).foregroundStyle(.secondary)
-                        Text("Select an event to see details and actions").foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    CalmEmptyState(symbol: "hand.point.left", title: "Choose an event",
+                                   message: "Its details and what you can do about it appear here.")
                 }
             }
+            .padding(.leading, 10)
             .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -95,24 +184,31 @@ private struct EventDetail: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .firstTextBaseline) {
-                    if let sev = event.severity { SeverityBadge(severity: sev) }
-                    Text(event.text).font(.title3.weight(.semibold)).textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        if let sev = event.severity { SeverityBadge(severity: sev) }
+                        Text(Date(timeIntervalSince1970: TimeInterval(event.at)).formatted(date: .abbreviated, time: .standard))
+                            .font(.system(size: 11.5, design: .rounded)).foregroundStyle(Theme.inkFaint)
+                    }
+                    Text(event.text)
+                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Theme.ink)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Text(Date(timeIntervalSince1970: TimeInterval(event.at)).formatted(date: .abbreviated, time: .standard))
-                    .font(.caption).foregroundStyle(.secondary)
 
                 if case let .activity(a) = event.kind {
                     activityBody(a)
                 } else if case let .newFinding(f) = event.kind {
-                    section("Details") { Text(f.detail).textSelection(.enabled) }
-                    if let p = f.path { section("Location") { mono(p) } }
-                    Text("Act on it from the Findings tab.").font(.caption).foregroundStyle(.secondary)
+                    section("Details") { Text(f.detail).foregroundStyle(Theme.ink).textSelection(.enabled) }
+                    if let p = f.path { section("Location") { MonoBox(text: p) } }
+                    Text("Act on it from the Findings tab.").font(.caption).foregroundStyle(Theme.inkSoft)
                 } else {
-                    Text("No further details for this event.").foregroundStyle(.secondary)
+                    Text("No further details for this event.").foregroundStyle(Theme.inkSoft)
                 }
             }
-            .padding()
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -120,12 +216,27 @@ private struct EventDetail: View {
     @ViewBuilder
     private func activityBody(_ a: Activity) -> some View {
         if let advice = a.advice {
-            section("What this means") {
-                Text(advice).textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 6) {
+                Label("What this means", systemImage: "leaf")
+                    .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Theme.moss)
+                Text(advice)
+                    .font(.system(size: 13, design: .rounded))
+                    .foregroundStyle(Theme.ink)
+                    .lineSpacing(2)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background {
+                RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).fill(Theme.cardStrong)
+                    .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).fill(Theme.adviceWash))
+            }
+            .overlay(RoundedRectangle(cornerRadius: Theme.cardRadius, style: .continuous).strokeBorder(Theme.sage.opacity(0.2), lineWidth: 0.5))
         }
         section("Program") {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 if let p = a.process {
                     LabeledContent("Name", value: p)
                 }
@@ -136,27 +247,33 @@ private struct EventDetail: View {
                 if let s = a.signing {
                     LabeledContent("Signature", value: s.summary + (s.identifier.map { " · \($0)" } ?? ""))
                 }
-                if let p = a.path { LabeledContent("Location") { mono(p) } }
+                if let p = a.path { LabeledContent("Location") { MonoBox(text: p) } }
             }
+            .font(.system(size: 12.5, design: .rounded))
+            .foregroundStyle(Theme.ink)
         }
         if let d = a.detail {
-            section("Command and origin") { mono(d) }
+            section("Command and origin") { MonoBox(text: d) }
         }
 
-        HStack {
+        HStack(spacing: 8) {
             Menu("Trust…") {
                 Button("Trust for this kind of alert") { model.trust(event); trusted = true }
                 Button("Trust for all alerts") { model.trust(event, allChecks: true); trusted = true }
             }
+            .menuStyle(.button)
+            .buttonStyle(SoftButtonStyle(prominent: true))
+            .menuIndicator(.visible)
             .fixedSize()
             .help("Stop alerts about this program. Signed apps are trusted by developer; unsigned files by their exact contents.")
             .disabled(trusted)
             if let p = a.path {
-                Button("Show in Finder") { model.reveal(path: p) }
+                Button("Show in Finder") { model.reveal(path: p) }.buttonStyle(SoftButtonStyle())
             }
-            Button("Copy details") { model.copyDetails(event) }
+            Button("Copy details") { model.copyDetails(event) }.buttonStyle(SoftButtonStyle())
             if let pid = a.pid, model.isRunning(pid: pid, path: a.path) {
                 Button("Quit program…", role: .destructive) { confirmQuit = true }
+                    .buttonStyle(SoftButtonStyle(destructive: true))
                     .confirmationDialog("Quit \(a.process ?? "this program")?", isPresented: $confirmQuit) {
                         Button("Quit", role: .destructive) { model.terminate(pid: pid) }
                     } message: {
@@ -164,26 +281,40 @@ private struct EventDetail: View {
                     }
             }
         }
+        .padding(.top, 2)
         if trusted {
             Label("Trusted. Future alerts about this program are hidden — manage in the Trusted tab.", systemImage: "checkmark.circle")
-                .font(.caption).foregroundStyle(.green)
+                .font(.system(size: 11.5, design: .rounded)).foregroundStyle(Theme.moss)
         }
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(title)
             content()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .zenCard(padding: 14)
     }
+}
 
-    private func mono(_ s: String) -> some View {
-        Text(s)
-            .font(.system(.caption, design: .monospaced))
-            .textSelection(.enabled)
-            .padding(6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 4))
+/// A quiet, centred message for empty places.
+struct CalmEmptyState: View {
+    let symbol: String
+    let title: String
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Squircle(symbol: symbol, tint: Theme.sage, size: 48)
+            Text(title).font(.system(size: 15, weight: .semibold, design: .rounded)).foregroundStyle(Theme.ink)
+            Text(message)
+                .font(.system(size: 12, design: .rounded))
+                .foregroundStyle(Theme.inkSoft)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 300)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
@@ -192,25 +323,42 @@ struct TrustedTab: View {
 
     var body: some View {
         if model.trustRules.isEmpty {
-            VStack(spacing: 8) {
-                Image(systemName: "hand.thumbsup").font(.largeTitle).foregroundStyle(.secondary)
-                Text("Nothing trusted yet").font(.headline)
-                Text("Use the thumbs-up on a finding or activity to stop alerts about an app you know.")
-                    .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            CalmEmptyState(symbol: "hand.thumbsup", title: "Nothing trusted yet",
+                           message: "Use the thumbs-up on a finding or activity to stop alerts about an app you know.")
         } else {
-            List(model.trustRules) { r in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(r.label).textSelection(.enabled)
-                        Text("\(r.subject.kindLabel) · \(r.check == "*" ? "all alerts" : r.check) · added \(relativeTime(r.createdAt))")
-                            .font(.caption).foregroundStyle(.secondary)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(model.trustRules) { r in
+                        HStack(spacing: 12) {
+                            Squircle(symbol: r.symbol, tint: Theme.sage, size: 30)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(r.label)
+                                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                                    .foregroundStyle(Theme.ink)
+                                    .textSelection(.enabled)
+                                Text("\(r.subject.kindLabel) · \(r.check == "*" ? "all alerts" : r.check) · added \(relativeTime(r.createdAt))")
+                                    .font(.system(size: 11.5, design: .rounded)).foregroundStyle(Theme.inkSoft)
+                            }
+                            Spacer()
+                            Button("Remove") { model.untrust(r) }.buttonStyle(SoftButtonStyle())
+                        }
+                        .zenCard(padding: 14)
                     }
-                    Spacer()
-                    Button("Remove") { model.untrust(r) }
                 }
+                .padding(8)
             }
+            .padding(-8)
+        }
+    }
+}
+
+private extension TrustRule {
+    var symbol: String {
+        switch subject {
+        case .developer: return "checkmark.seal"
+        case .file: return "doc"
+        case .exact: return "bell.slash"
+        case .unknown: return "hand.thumbsup"
         }
     }
 }
@@ -219,43 +367,87 @@ struct StatusTab: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        Form {
-            if let s = model.status {
-                LabeledContent("Service", value: "vogterd \(s.version)\(s.asRoot ? " (root)" : " (user mode)")")
-                LabeledContent("Socket", value: model.socketPath ?? "-")
-                LabeledContent("Scan interval", value: "\(s.scanIntervalSecs) s")
-                if let last = s.lastScan { LabeledContent("Last scan", value: relativeTime(last)) }
-                if let rt = s.realtime {
-                    LabeledContent("Realtime", value: rt.sources.joined(separator: ", "))
-                    LabeledContent("Endpoint Security", value: rt.endpointSecurity ? "active" : "off")
-                    if let err = rt.endpointSecurityError {
-                        Text(err).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                if let s = model.status {
+                    group("Service", symbol: "server.rack") {
+                        row("Service", "vogterd \(s.version)\(s.asRoot ? " (root)" : " (user mode)")")
+                        row("Socket", model.socketPath ?? "-")
+                        row("Scan interval", "\(s.scanIntervalSecs) s")
+                        if let last = s.lastScan { row("Last scan", relativeTime(last)) }
+                        if let until = s.learningUntil, until > UInt64(Date().timeIntervalSince1970) {
+                            row("Learning", "until \(Date(timeIntervalSince1970: TimeInterval(until)).formatted(date: .abbreviated, time: .omitted))")
+                        }
+                        row("Trust rules", "\(s.trustRules ?? 0)", last: true)
+                    }
+                    group("Watching", symbol: "eye") {
+                        if let rt = s.realtime {
+                            row("Realtime", rt.sources.joined(separator: ", "))
+                            row("Endpoint Security", rt.endpointSecurity ? "active" : "off", last: rt.endpointSecurityError == nil)
+                            if let err = rt.endpointSecurityError {
+                                note(err).padding(.top, 6)
+                                Divider().overlay(Theme.hairline).padding(.vertical, 6)
+                            }
+                        }
+                        row("Microphone", s.av.microphoneInUse ? "in use" : "off")
+                        row("Camera", s.av.cameraInUse ? "in use" : "off", last: true)
+                    }
+                    group("Limited visibility", symbol: "eye.slash") {
+                        if s.sensorErrors.isEmpty {
+                            Text("None — Vogter can see everything it looks for")
+                                .font(.system(size: 12.5, design: .rounded)).foregroundStyle(Theme.inkSoft)
+                        }
+                        ForEach(s.sensorErrors, id: \.self) { note($0) }
+                        if !s.asRoot {
+                            note("Running as your user. Install the service as root to see all processes.")
+                        }
+                    }
+                } else {
+                    NotRunningView().zenCard(padding: 18)
+                }
+                if let err = model.lastError {
+                    group("Last error", symbol: "exclamationmark.bubble") {
+                        Text(err).font(.system(size: 12.5, design: .rounded)).foregroundStyle(Severity.high.ink).textSelection(.enabled)
                     }
                 }
-                if let until = s.learningUntil, until > UInt64(Date().timeIntervalSince1970) {
-                    LabeledContent("Learning", value: "until \(Date(timeIntervalSince1970: TimeInterval(until)).formatted(date: .abbreviated, time: .omitted))")
-                }
-                LabeledContent("Trust rules", value: "\(s.trustRules ?? 0)")
-                LabeledContent("Microphone", value: s.av.microphoneInUse ? "in use" : "off")
-                LabeledContent("Camera", value: s.av.cameraInUse ? "in use" : "off")
-                Section("Limited visibility") {
-                    if s.sensorErrors.isEmpty {
-                        Text("None").foregroundStyle(.secondary)
-                    }
-                    ForEach(s.sensorErrors, id: \.self) { Text($0).font(.caption).textSelection(.enabled) }
-                    if !s.asRoot {
-                        Text("Running as your user. Install the service as root to see all processes.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            } else {
-                NotRunningView()
             }
-            if let err = model.lastError {
-                Section("Last error") { Text(err).foregroundStyle(.red) }
-            }
+            .frame(maxWidth: 640)
+            .padding(8)
+            .frame(maxWidth: .infinity)
         }
-        .formStyle(.grouped)
+        .padding(-8)
+    }
+
+    private func group<Content: View>(_ title: String, symbol: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: symbol)
+                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(Theme.inkFaint)
+                .padding(.leading, 4)
+            VStack(alignment: .leading, spacing: 0) { content() }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .zenCard(padding: 14)
+        }
+    }
+
+    private func row(_ label: String, _ value: String, last: Bool = false) -> some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(label).foregroundStyle(Theme.ink)
+                Spacer(minLength: 16)
+                Text(value).foregroundStyle(Theme.inkSoft).multilineTextAlignment(.trailing)
+            }
+            .font(.system(size: 12.5, design: .rounded))
+            .padding(.vertical, 6)
+            if !last { Divider().overlay(Theme.hairline) }
+        }
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11.5, design: .rounded))
+            .foregroundStyle(Theme.inkSoft)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }

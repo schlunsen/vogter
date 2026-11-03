@@ -1,27 +1,37 @@
 import SwiftUI
 
-extension Severity {
-    var color: Color {
-        switch self {
-        case .info: return .secondary
-        case .low: return .blue
-        case .medium: return .orange
-        case .high: return .red
-        case .critical: return .purple
-        }
-    }
-}
-
+/// A soft pill: a gradient dot and the severity in sentence case ("High").
 struct SeverityBadge: View {
     let severity: Severity
 
     var body: some View {
-        Text(severity.label.uppercased())
-            .font(.system(size: 9, weight: .bold))
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
-            .foregroundStyle(severity == .info ? Color.primary : Color.white)
-            .background(severity.color.opacity(severity == .info ? 0.2 : 1), in: RoundedRectangle(cornerRadius: 3))
+        HStack(spacing: 4) {
+            Circle().fill(severity.gradient).frame(width: 6, height: 6)
+            Text(severity.label)
+                .font(.system(size: 10.5, weight: severity >= .high ? .semibold : .medium, design: .rounded))
+                .foregroundStyle(severity.ink)
+        }
+        .padding(.leading, 6)
+        .padding(.trailing, 8)
+        .padding(.vertical, 2.5)
+        .background(severity.color.opacity(severity.tintOpacity), in: Capsule(style: .continuous))
+        .overlay(Capsule(style: .continuous).strokeBorder(severity.color.opacity(0.25), lineWidth: 0.5))
+        .fixedSize()
+        .accessibilityLabel("Severity: \(severity.label)")
+    }
+}
+
+extension StoredFinding {
+    var symbol: String {
+        switch category {
+        case "keylogger": return "keyboard"
+        case "privacy": return "hand.raised"
+        case "process": return "terminal"
+        case "persistence": return "arrow.clockwise"
+        case "network": return "network"
+        case "system_health": return "heart"
+        default: return "sparkle"
+        }
     }
 }
 
@@ -31,42 +41,62 @@ struct FindingRow: View {
     var compact = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            SeverityBadge(severity: finding.severity)
-                .frame(width: 62, alignment: .leading)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(finding.title).font(.callout.weight(.medium))
+        HStack(alignment: .top, spacing: 10) {
+            Squircle(symbol: finding.symbol, tint: finding.severity.color, size: compact ? 26 : 30)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(finding.title)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(Theme.ink)
                 Text(finding.detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Theme.inkSoft)
                     .lineLimit(compact ? 2 : nil)
                     .textSelection(.enabled)
                 if !compact, let path = finding.path {
-                    Text(path).font(.caption.monospaced()).foregroundStyle(.tertiary).textSelection(.enabled)
+                    MonoBox(text: path).padding(.top, 2)
                 }
-                Text("First seen \(relativeTime(finding.firstSeen))")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                HStack(spacing: 6) {
+                    SeverityBadge(severity: finding.severity)
+                    Text("First seen \(relativeTime(finding.firstSeen))")
+                        .font(.system(size: 10.5, design: .rounded))
+                        .foregroundStyle(Theme.inkFaint)
+                }
+                .padding(.top, 2)
             }
             Spacer(minLength: 4)
-            if finding.path != nil {
-                Button { model.reveal(finding) } label: { Image(systemName: "folder") }
-                    .buttonStyle(.borderless)
-                    .help("Show in Finder")
+            HStack(spacing: 2) {
+                if finding.path != nil {
+                    Button { model.reveal(finding) } label: { RowIcon(symbol: "folder") }
+                        .buttonStyle(.plain)
+                        .help("Show in Finder")
+                }
+                Button { model.acknowledge(finding) } label: { RowIcon(symbol: "checkmark.circle") }
+                    .buttonStyle(.plain)
+                    .help("I know about this — hide it until it goes away and comes back")
+                Menu {
+                    Button("Trust for this kind of alert") { model.trust(finding) }
+                    Button("Trust for all alerts") { model.trust(finding, allChecks: true) }
+                } label: { RowIcon(symbol: "hand.thumbsup") }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Trust this app or file permanently")
             }
-            Button { model.acknowledge(finding) } label: { Image(systemName: "checkmark.circle") }
-                .buttonStyle(.borderless)
-                .help("I know about this — hide it until it goes away and comes back")
-            Menu {
-                Button("Trust for this kind of alert") { model.trust(finding) }
-                Button("Trust for all alerts") { model.trust(finding, allChecks: true) }
-            } label: { Image(systemName: "hand.thumbsup") }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("Trust this app or file permanently")
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 4)
+    }
+}
+
+/// A quiet icon for row actions.
+private struct RowIcon: View {
+    let symbol: String
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 12.5))
+            .foregroundStyle(Theme.inkSoft)
+            .frame(width: 24, height: 24)
+            .contentShape(Rectangle())
     }
 }
 
@@ -76,29 +106,52 @@ struct LiveIndicators: View {
     var body: some View {
         if av.microphoneInUse {
             let who = av.microphoneClients.map(\.name).joined(separator: ", ")
-            Label(who.isEmpty ? "Microphone in use" : "Microphone in use by \(who)", systemImage: "mic.fill")
-                .foregroundStyle(.red)
+            indicator(who.isEmpty ? "Microphone in use" : "Microphone in use by \(who)", symbol: "mic.fill")
         }
         if av.cameraInUse {
-            Label("Camera in use", systemImage: "video.fill").foregroundStyle(.red)
+            indicator("Camera in use", symbol: "video.fill")
         }
+    }
+
+    private func indicator(_ text: String, symbol: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 22, height: 22)
+                .background(Severity.high.gradient, in: Circle())
+            Text(text)
+                .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                .foregroundStyle(Severity.high.ink)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Severity.high.color.opacity(0.13), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
 struct NotRunningView: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("Vogter service is not running", systemImage: "bolt.horizontal.circle")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Squircle(symbol: "moon.zzz", tint: Theme.dusk, size: 30)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Resting")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Theme.ink)
+                    Text("The Vogter service isn't running")
+                        .font(.system(size: 12, design: .rounded))
+                        .foregroundStyle(Theme.inkSoft)
+                }
+            }
             Text("Start it from the project folder:")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text("cargo run --release -p vogterd")
-                .font(.caption.monospaced())
-                .textSelection(.enabled)
-                .padding(6)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
-            Text("Reconnecting automatically…").font(.caption2).foregroundStyle(.tertiary)
+                .font(.system(size: 11.5, design: .rounded))
+                .foregroundStyle(Theme.inkSoft)
+            MonoBox(text: "cargo run --release -p vogterd")
+            Text("Vogter will reconnect on its own…")
+                .font(.system(size: 10.5, design: .rounded))
+                .foregroundStyle(Theme.inkFaint)
         }
     }
 }

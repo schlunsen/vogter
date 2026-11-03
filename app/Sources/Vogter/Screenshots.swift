@@ -7,15 +7,12 @@ import SwiftUI
 /// (unlike `ImageRenderer`) also draws AppKit-backed controls such as `List` and `Form`.
 /// The final framing (rounded corners, shadow, the combined hero image) uses `ImageRenderer`.
 ///
-/// One exception: the system draws the TabView's selected tab with a material that
-/// offscreen drawing can't capture, so the main window uses `ScreenshotWindow`, a
-/// replica of the tab strip around the real tab views.
+/// The main window's tab strip is plain SwiftUI (`ZenTabBar`), so it is drawn as is;
+/// `ScreenshotWindow` only pins the selected tab.
 @MainActor
 enum Screenshots {
     static let windowSize = CGSize(width: 1000, height: 640)
-    static let tabs: [(id: String, title: String)] = [
-        ("findings", "Findings"), ("activity", "Activity"), ("trusted", "Trusted"), ("status", "Status"),
-    ]
+    static let tabs = MainWindowContent.tabs.map(\.id)
 
     static func render(to dir: URL) -> Bool {
         _ = NSApplication.shared
@@ -33,7 +30,7 @@ enum Screenshots {
             ok = save(framed(menu, scheme: scheme, cornerRadius: 12), dir, "menu-\(suffix).png") && ok
 
             var windows: [String: NSImage] = [:]
-            for tab in tabs.map(\.id) {
+            for tab in tabs {
                 let view = ScreenshotWindow(tab: tab).environment(Demo.model())
                 let image = capture(view, size: windowSize, scheme: scheme, titled: true)
                 windows[tab] = image
@@ -51,7 +48,7 @@ enum Screenshots {
     /// Draw `view` in an offscreen window (with its title bar when `titled`) at 2x.
     private static func capture<V: View>(_ view: V, size: CGSize?, scheme: ColorScheme, titled: Bool) -> NSImage {
         // The menu bar popover has no window background of its own; give it one.
-        let host = NSHostingView(rootView: view.background(Color(nsColor: .windowBackgroundColor)))
+        let host = NSHostingView(rootView: view.background(Theme.paper))
         let content = size ?? host.fittingSize
         // Far off any screen and never activated: nothing appears and focus isn't taken.
         let window = NSWindow(contentRect: NSRect(origin: CGPoint(x: -30_000, y: -30_000), size: content),
@@ -145,56 +142,12 @@ enum Screenshots {
     }
 }
 
-/// `MainWindow` with its TabView chrome redrawn: the same tab titles, order and box, the
-/// real tab views inside.
+/// `MainWindow` on a given tab: the same tab strip and the real tab views, without
+/// touching the model's selection.
 struct ScreenshotWindow: View {
     let tab: String
 
     var body: some View {
-        ZStack(alignment: .top) {
-            content
-                .padding(.top, 17)
-                .padding([.horizontal, .bottom], 2)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.03)))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.1)))
-                .padding(.top, 12)
-            TabStrip(selected: tab)
-        }
-        .padding()
-    }
-
-    @ViewBuilder private var content: some View {
-        switch tab {
-        case "activity": ActivityTab()
-        case "trusted": TrustedTab()
-        case "status": StatusTab()
-        default: FindingsTab()
-        }
-    }
-}
-
-private struct TabStrip: View {
-    let selected: String
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(Screenshots.tabs, id: \.id) { tab in
-                Text(tab.title)
-                    .font(.system(size: 13))
-                    .padding(.horizontal, 14)
-                    .frame(height: 20)
-                    .background {
-                        if tab.id == selected {
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(scheme == .dark ? Color.white.opacity(0.22) : Color.white)
-                                .shadow(color: .black.opacity(0.15), radius: 1, y: 0.5)
-                        }
-                    }
-            }
-        }
-        .padding(2)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(scheme == .dark ? 0.1 : 0.06)))
+        MainWindowContent(selection: .constant(tab))
     }
 }
