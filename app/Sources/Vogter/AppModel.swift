@@ -78,13 +78,13 @@ final class AppModel {
         findings.map(\.severity).filter { $0 > .info }.max()
     }
 
-    var menuBarSymbol: String {
-        // Calm: a leaf. Needs a look: a shield that says so. Not connected: resting.
-        guard connected else { return "moon.zzz" }
+    var menuBarState: MenuBarIcon.State {
+        // Calm: the plain shield. Needs a look: a shield that says so. Not connected: resting.
+        guard connected else { return .resting }
         switch worst {
-        case .critical?, .high?: return "exclamationmark.shield.fill"
-        case .medium?: return "exclamationmark.shield"
-        default: return "leaf"
+        case .critical?, .high?: return .alert
+        case .medium?: return .look
+        default: return .calm
         }
     }
 

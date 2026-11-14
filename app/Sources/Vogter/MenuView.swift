@@ -49,8 +49,8 @@ struct MenuView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Image(systemName: model.menuBarSymbol)
-                .font(.system(size: 17, weight: .medium))
+            Image(nsImage: MenuBarIcon.image(model.menuBarState, size: 22))
+                .renderingMode(.template)
                 .foregroundStyle(.white)
                 .frame(width: 38, height: 38)
                 .background(moodGradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))

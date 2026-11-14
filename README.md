@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/images/hero.jpg" alt="Soft mist over calm hills and a still lake, with a single smooth stone resting on the water" width="100%">
-</p>
-
 <div align="center">
 
 <img src="docs/images/icon.png" width="112" height="112" alt="Vogter icon">
@@ -43,10 +39,10 @@ Vogter lives as a small icon in your menu bar. Most of the time it simply rests 
 
 <table>
   <tr>
-    <td width="25%"><img src="docs/images/watching.jpg" alt="A stone lantern in a raked-sand garden"></td>
-    <td width="25%"><img src="docs/images/startup.jpg" alt="Balanced stacked stones on raked sand"></td>
-    <td width="25%"><img src="docs/images/listening.jpg" alt="A drop falling into a still bowl of water"></td>
-    <td width="25%"><img src="docs/images/away.jpg" alt="A crescent moon fading into dawn over still water"></td>
+    <td width="25%"><img src="docs/images/watching.svg" alt="A keyboard" width="100%"></td>
+    <td width="25%"><img src="docs/images/startup.svg" alt="A power symbol" width="100%"></td>
+    <td width="25%"><img src="docs/images/listening.svg" alt="A microphone" width="100%"></td>
+    <td width="25%"><img src="docs/images/away.svg" alt="A crescent moon" width="100%"></td>
   </tr>
   <tr>
     <td align="center"><sub>Who can read your keystrokes</sub></td>
@@ -331,4 +327,4 @@ only, since they're GPL), [Santa](https://github.com/northpolesec/santa) and
 
 ## License
 
-[Apache-2.0](LICENSE). Illustrations were generated for this project and live in `docs/images/`.
+[Apache-2.0](LICENSE).
