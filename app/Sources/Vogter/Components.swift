@@ -30,6 +30,7 @@ extension StoredFinding {
         case "persistence": return "arrow.clockwise"
         case "network": return "network"
         case "system_health": return "heart"
+        case "browser": return "puzzlepiece.extension"
         default: return "sparkle"
         }
     }

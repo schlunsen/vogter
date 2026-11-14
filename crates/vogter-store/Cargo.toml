@@ -8,5 +8,5 @@ publish.workspace = true
 [dependencies]
 rusqlite = { version = "0.41.1", features = ["bundled", "fallible_uint"] }
 serde_json = "1.0.154"
-vogter-ipc = { version = "0.1.0", path = "../vogter-ipc" }
-vogter-model = { version = "0.1.0", path = "../vogter-model" }
+vogter-ipc = { version = "0.2.0", path = "../vogter-ipc" }
+vogter-model = { version = "0.2.0", path = "../vogter-model" }

@@ -6,7 +6,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::collections::{BTreeSet, HashMap};
 
 use vogter_detect::trust::{Subject, is_trusted, subject_for};
-use vogter_ipc::{Event, Message, PROTOCOL_VERSION, Realtime, Request, Status};
+use vogter_ipc::{
+    Event, HistoryQuery, MAX_NOTE_CHARS, Message, PROTOCOL_VERSION, ProgramProfile, Realtime,
+    Request, Status,
+};
 use vogter_model::{Activity, ActivityKind, AvState, ExecInfo, Severity, SignatureKind, TrustRule};
 use vogter_sensors::hash::sha256_file;
 
@@ -64,6 +67,36 @@ fn now() -> u64 {
         .map(|d| d.as_secs())
         .unwrap_or(0)
 }
+
+/// How the `programs` table knows a program: by developer for signed code (so
+/// updates stay familiar), by path otherwise.
+fn program_identity(path: &str, signing: &vogter_model::Signing) -> String {
+    match (&signing.kind, &signing.team_id) {
+        (SignatureKind::ThirdParty, Some(team)) => {
+            format!(
+                "team:{team}:{}",
+                signing.identifier.as_deref().unwrap_or("")
+            )
+        }
+        _ => format!("path:{path}"),
+    }
+}
+
+fn annotation(event_id: i64, state: Option<(Option<String>, Option<u64>)>) -> Message {
+    match state {
+        Some((note, reviewed_at)) => Message::Annotation {
+            event_id,
+            note,
+            reviewed_at,
+        },
+        None => Message::Error {
+            message: format!("no event {event_id}"),
+        },
+    }
+}
+
+/// How often old history is cleaned up (also once at startup).
+const RETENTION_EVERY: Duration = Duration::from_secs(86_400);
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     // A panicked thread must not take the whole daemon down with poisoned locks.
@@ -146,6 +179,40 @@ impl Daemon {
                     rules: lock(&self.trust).clone(),
                 };
             }
+            Request::History(q) => {
+                lock(&self.store)
+                    .history(&q)
+                    .map(|(events, next)| Message::History {
+                        events,
+                        next_before_id: next,
+                        token: q.token,
+                    })
+            }
+            Request::HistoryDays { since, until } => lock(&self.store)
+                .day_summaries(since, until)
+                .map(|days| Message::HistoryDays { days }),
+            Request::FindingHistory(q) => {
+                lock(&self.store)
+                    .finding_history(&q)
+                    .map(|findings| Message::FindingHistory {
+                        findings,
+                        token: q.token,
+                    })
+            }
+            Request::AwayPeriods { since, until } => lock(&self.store)
+                .away_periods(since, until)
+                .map(|periods| Message::AwayPeriods { periods }),
+            Request::ProgramProfile { path } => return self.program_profile(path),
+            Request::ChangesSince {
+                since,
+                min_severity,
+            } => lock(&self.store)
+                .changes_since(since, min_severity.unwrap_or(Severity::Low))
+                .map(Message::Changes),
+            Request::Annotate { event_id, note } => return self.annotate(event_id, &note),
+            Request::SetReviewed { event_id, reviewed } => lock(&self.store)
+                .set_reviewed(event_id, reviewed, now())
+                .map(|state| annotation(event_id, state)),
             Request::Untrust { id } => {
                 let removed = lock(&self.store).remove_trust(id);
                 return match removed {
@@ -166,6 +233,114 @@ impl Daemon {
         result.unwrap_or_else(|e| Message::Error {
             message: e.to_string(),
         })
+    }
+
+    fn annotate(&self, event_id: i64, note: &str) -> Message {
+        // Plain text only: no control characters other than line breaks and tabs.
+        let note: String = note
+            .trim()
+            .chars()
+            .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
+            .collect();
+        if note.chars().count() > MAX_NOTE_CHARS {
+            return Message::Error {
+                message: format!("notes are limited to {MAX_NOTE_CHARS} characters"),
+            };
+        }
+        let note = (!note.is_empty()).then_some(note.as_str());
+        match lock(&self.store).annotate(event_id, note, now()) {
+            Ok(state) => annotation(event_id, state),
+            Err(e) => Message::Error {
+                message: e.to_string(),
+            },
+        }
+    }
+
+    /// Everything known about the program at `path`.
+    fn program_profile(&self, path: String) -> Message {
+        let result = (|| -> vogter_store::Result<ProgramProfile> {
+            let store = lock(&self.store);
+            let (events, _) = store.history(&HistoryQuery {
+                program: Some(path.clone()),
+                limit: Some(50),
+                ..Default::default()
+            })?;
+            let event_count = store.program_event_count(&path)?;
+            let findings = store.active_for_path(&path)?;
+            let past_findings = store.finding_history(&HistoryQuery {
+                program: Some(path.clone()),
+                resolved_only: true,
+                limit: Some(20),
+                ..Default::default()
+            })?;
+            let path_identity = format!("path:{path}");
+            let recorded = store.program(&path_identity)?;
+            drop(store);
+
+            // The signature as last recorded, from its newest event or finding.
+            let recorded_signing = events
+                .iter()
+                .find_map(|e| match &e.event {
+                    Event::Activity { activity } => activity.signing.clone(),
+                    Event::NewFinding { finding } => finding.finding.signing.clone(),
+                    _ => None,
+                })
+                .or_else(|| findings.iter().find_map(|f| f.finding.signing.clone()))
+                .or_else(|| past_findings.iter().find_map(|f| f.finding.signing.clone()));
+            let exists = std::path::Path::new(&path).exists();
+            // Only look at files Vogter already knows about: this is not a
+            // general-purpose signature checker for any path a client names.
+            let known = event_count > 0
+                || !findings.is_empty()
+                || !past_findings.is_empty()
+                || recorded.is_some();
+            let signing = if known && exists {
+                Some(vogter_sensors::codesign::for_path(&path))
+            } else {
+                recorded_signing
+            };
+            let familiarity = match &signing {
+                Some(s) => match program_identity(&path, s) {
+                    id if id != path_identity => lock(&self.store).program(&id)?.or(recorded),
+                    _ => recorded,
+                },
+                None => recorded,
+            };
+            Ok(ProgramProfile {
+                name: path.rsplit('/').next().unwrap_or(&path).to_string(),
+                path: path.clone(),
+                exists,
+                signing,
+                familiarity,
+                findings,
+                past_findings,
+                events,
+                event_count,
+            })
+        })();
+        match result {
+            Ok(p) => Message::ProgramProfile(p),
+            Err(e) => Message::Error {
+                message: e.to_string(),
+            },
+        }
+    }
+
+    /// Forget old history now and then every [`RETENTION_EVERY`].
+    pub fn retention_loop(&self) {
+        loop {
+            match lock(&self.store).cleanup(now()) {
+                Ok(c) => tracing::info!(
+                    events = c.events,
+                    findings = c.findings,
+                    scans = c.scans,
+                    notes = c.notes,
+                    "old history cleaned up"
+                ),
+                Err(e) => tracing::error!("cleaning up history: {e}"),
+            }
+            thread::sleep(RETENTION_EVERY);
+        }
     }
 
     fn status(&self) -> Status {
@@ -228,15 +403,7 @@ impl Daemon {
         if exec.signing.is_apple() {
             return assessed;
         }
-        let identity = match (&exec.signing.kind, &exec.signing.team_id) {
-            (SignatureKind::ThirdParty, Some(team)) => {
-                format!(
-                    "team:{team}:{}",
-                    exec.signing.identifier.as_deref().unwrap_or("")
-                )
-            }
-            _ => format!("path:{}", exec.path),
-        };
+        let identity = program_identity(&exec.path, &exec.signing);
         let t = now();
         let store = lock(&self.store);
         let prior = store.record_program(&identity, exec.name(), t).ok()?;
@@ -790,6 +957,100 @@ mod tests {
 
         assert_eq!(d.handle(Request::Untrust { id: rule.id }), Message::Ok);
         assert!(lock(&d.trust).is_empty());
+    }
+
+    #[test]
+    fn notes_are_plain_and_bounded() {
+        let d = daemon();
+        let mut recent = HashMap::new();
+        d.activity(
+            act(ActivityKind::Sudo, Severity::Medium, "Failed sudo by me"),
+            &mut recent,
+        );
+        let id = lock(&d.store).recent_events(1).unwrap()[0].id;
+        assert_eq!(
+            d.handle(Request::Annotate {
+                event_id: id,
+                note: "  typo, that was me\u{7}\n ".into()
+            }),
+            Message::Annotation {
+                event_id: id,
+                note: Some("typo, that was me".into()),
+                reviewed_at: None
+            }
+        );
+        let too_long = "x".repeat(MAX_NOTE_CHARS + 1);
+        assert!(matches!(
+            d.handle(Request::Annotate {
+                event_id: id,
+                note: too_long
+            }),
+            Message::Error { .. }
+        ));
+        // Exactly at the limit, counted in characters rather than bytes.
+        let at_limit = "ø".repeat(MAX_NOTE_CHARS);
+        assert!(matches!(
+            d.handle(Request::Annotate {
+                event_id: id,
+                note: at_limit
+            }),
+            Message::Annotation { note: Some(_), .. }
+        ));
+        let Message::Annotation { reviewed_at, .. } = d.handle(Request::SetReviewed {
+            event_id: id,
+            reviewed: true,
+        }) else {
+            panic!("no annotation")
+        };
+        assert!(reviewed_at.is_some());
+        assert!(matches!(
+            d.handle(Request::SetReviewed {
+                event_id: 999,
+                reviewed: true
+            }),
+            Message::Error { .. }
+        ));
+    }
+
+    #[test]
+    fn program_profile_gathers_what_is_known() {
+        let d = daemon();
+        let mut recent = HashMap::new();
+        let mut a = act(
+            ActivityKind::ProcessStarted,
+            Severity::Low,
+            "First run of tool",
+        );
+        a.path = Some("/nonexistent/tool".into());
+        a.signing = Some(Signing {
+            kind: SignatureKind::AdHoc,
+            identifier: None,
+            team_id: None,
+            notarized: false,
+        });
+        d.activity(a, &mut recent);
+        lock(&d.store)
+            .record_program("path:/nonexistent/tool", "tool", 5)
+            .unwrap();
+        let Message::ProgramProfile(p) = d.handle(Request::ProgramProfile {
+            path: "/nonexistent/tool".into(),
+        }) else {
+            panic!("no profile")
+        };
+        assert_eq!(p.name, "tool");
+        assert!(!p.exists);
+        assert_eq!(p.event_count, 1);
+        assert_eq!(p.events.len(), 1);
+        assert_eq!(p.signing.unwrap().kind, SignatureKind::AdHoc);
+        assert_eq!(p.familiarity.unwrap().first_seen, 5);
+
+        // Unknown paths get an empty profile, and no signature check.
+        let Message::ProgramProfile(p) = d.handle(Request::ProgramProfile {
+            path: "/bin/ls".into(),
+        }) else {
+            panic!("no profile")
+        };
+        assert!(p.exists && p.signing.is_none() && p.events.is_empty());
     }
 
     #[test]

@@ -4,7 +4,9 @@
 //! layer turns a snapshot into [`Finding`]s. Everything here is plain data so it
 //! can cross process boundaries (daemon -> app) as JSON.
 
+pub mod download;
 pub mod redact;
+pub mod takeover;
 
 use serde::{Deserialize, Serialize};
 
@@ -71,6 +73,8 @@ pub enum Category {
     Persistence,
     Network,
     SystemHealth,
+    /// Browser extensions and add-ons.
+    Browser,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -207,6 +211,12 @@ pub struct Snapshot {
     pub cron_entries: Vec<CronEntry>,
     pub listeners: Vec<Listener>,
     pub health: Health,
+    /// Extensions installed in the watched user's browsers.
+    #[serde(default)]
+    pub browser_extensions: Vec<BrowserExtension>,
+    /// Shell startup files, SSH keys, hosts, sudoers, profiles, hooks, extensions.
+    #[serde(default)]
+    pub takeover: takeover::Takeover,
     /// Sensors that failed or ran with reduced visibility.
     pub sensor_errors: Vec<SensorError>,
 }
@@ -415,6 +425,51 @@ pub struct Health {
     pub screen_sharing: Option<bool>,
 }
 
+/// How an extension got into the browser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtensionSource {
+    /// The browser's own store (Chrome Web Store, Firefox Add-ons, App Store).
+    Store,
+    /// Shipped with the browser or the computer (not chosen by anyone later).
+    Preinstalled,
+    /// Installed from a file or by another program, not from the store.
+    Sideloaded,
+    /// Loaded from a folder in developer mode (unpacked / temporary).
+    Developer,
+    /// Forced by a management policy (an employer's or school's MDM, or malware).
+    Policy,
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BrowserExtension {
+    /// "Google Chrome", "Brave", "Firefox", "Safari"...
+    pub browser: String,
+    /// Profile name as the browser shows it ("Default", "Work"...).
+    pub profile: String,
+    /// The profile folder (for Safari, the parent app).
+    pub profile_path: String,
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub enabled: bool,
+    pub source: ExtensionSource,
+    /// API permissions (`cookies`, `tabs`, `nativeMessaging`...).
+    pub permissions: Vec<String>,
+    /// Websites it can read and change (`<all_urls>`, `https://*.example.com/*`...).
+    pub host_permissions: Vec<String>,
+    /// The extension's folder or file on disk.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Unix seconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_time: Option<u64>,
+    /// Safari: signature of the app that carries the extension.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signing: Option<Signing>,
+}
+
 // ---------------------------------------------------------------------------
 // History and live state (daemon)
 // ---------------------------------------------------------------------------
@@ -430,6 +485,9 @@ pub struct StoredFinding {
     pub last_seen: u64,
     /// The user said "I know about this one".
     pub acknowledged: bool,
+    /// When it went away (Unix seconds); only set in finding history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_at: Option<u64>,
 }
 
 /// A process currently recording from an audio input.
@@ -496,6 +554,8 @@ pub enum ActivityKind {
     MalwareDetected,
     /// Summary of what happened while the screen was locked.
     AwaySummary,
+    /// A program, installer or disk image just landed in Downloads.
+    Download,
 }
 
 /// Something that happened, as opposed to a [`Finding`] (a state that exists).

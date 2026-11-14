@@ -4,13 +4,16 @@
 //! root (and with Full Disk Access) increases visibility.
 
 pub mod av;
+pub mod browser;
 pub mod codesign;
+pub mod downloads;
 pub mod eventtap;
 pub mod hash;
 pub mod health;
 pub mod network;
 pub mod persistence;
 pub mod process;
+pub mod takeover;
 pub mod tcc;
 pub mod user;
 
@@ -64,6 +67,9 @@ pub fn snapshot() -> Snapshot {
         fail("cron", e, &["persistence.cron"], None);
         Vec::new()
     });
+    let browser_extensions = browser::collect(&mut errs);
+    errs.drain(..)
+        .for_each(|(src, e)| fail("browser", e, &["browser."], Some(src)));
     let health = health::collect();
     for (known, check) in [
         (health.sip_enabled.is_some(), "health.sip"),
@@ -83,7 +89,11 @@ pub fn snapshot() -> Snapshot {
         }
     }
 
+    let (takeover, takeover_errors) = takeover::collect();
+    errors.extend(takeover_errors);
+
     snap.sensor_errors = errors;
+    snap.takeover = takeover;
     snap.listeners = network::collect(&processes);
     snap.processes = processes;
     snap.event_taps = event_taps;
@@ -91,5 +101,6 @@ pub fn snapshot() -> Snapshot {
     snap.launch_items = launch_items;
     snap.cron_entries = cron_entries;
     snap.health = health;
+    snap.browser_extensions = browser_extensions;
     snap
 }

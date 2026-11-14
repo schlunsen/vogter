@@ -16,10 +16,12 @@ only *changes* after it alert you. No special entitlement needed:
 | Input Monitoring / Accessibility / Screen Recording / Full Disk / camera / mic grants | TCC databases + code signature of each granted app (needs Full Disk Access) |
 | Processes | Code signature (Apple / developer / notarized / ad-hoc / unsigned / broken), deleted executables, runs from temp / Downloads / hidden Library folders |
 | Persistence | LaunchDaemons & LaunchAgents (script runners, fake `com.apple.*` labels, unsigned targets), crontab |
+| Other footholds | Shell startup files (download-and-run, encoded code, background jobs, programs in temp/Downloads, password dialogs, `sudo`/`ssh` wrappers, `DYLD_INSERT_LIBRARIES`), SSH `authorized_keys`, `/etc/hosts` redirects and blocks, sudoers `NOPASSWD`/`!authenticate`, configuration profiles, login hooks, system and kernel extensions, Background Task Management items. Root only: sudoers, root's SSH keys and login hook, Mac-wide profiles, `sfltool dumpbtm` |
 | Network | Sockets listening on non-loopback addresses, per process |
+| Browser extensions | Chrome, Brave, Edge, Arc, Vivaldi, Chromium, Opera (every profile), Firefox and Safari: where each came from (store, sideloaded, developer mode, policy) and whether it can read every website with powerful permissions |
 | System health | SIP, Gatekeeper, FileVault, firewall, XProtect version, Remote Login (SSH) and Screen Sharing switched on |
 
-`vogter inventory [processes|taps|tcc|launchd|cron|listeners|health]` dumps the raw facts
+`vogter inventory [processes|taps|tcc|launchd|cron|listeners|health|browser-extensions]` dumps the raw facts
 behind these checks as JSON.
 
 ## Realtime
@@ -30,7 +32,7 @@ Between scans, `vogterd` watches live:
   Keychain dumping, `curl … | sh`, hidden base64 payloads, quarantine removal, Gatekeeper
   being turned off, account changes, scripts typing into other apps, unsigned programs in
   temp or Downloads folders. Each alert carries plain-language advice ("What this means").
-- **Startup items** and **permission databases** trigger an immediate rescan when they change (FSEvents).
+- **Startup items**, **permission databases** and **browser extension folders** trigger an immediate rescan when they change (FSEvents).
 - **sudo** (successful and failed), **screen lock and unlock**, and a **"while you were away"**
   summary on unlock listing the alerts and programs that started while the screen was locked.
 - **Microphone and camera**: polled every second; the microphone reports which app uses it.
@@ -61,6 +63,33 @@ The same alert (kind + summary + path) is reported at most once per 10 minutes.
   learns. After that, a program running for the first time is noted (Low if it has no developer
   signature). Low and Medium launch alerts for programs that have run 20+ times over 3+ days
   are lowered one level. High and Critical are never lowered.
+
+## History
+
+Everything `vogterd` logs lands in the `events` table as JSON; findings keep `first_seen`,
+`last_seen` and `resolved_at`. The History tab and `vogter history` look back through them:
+
+| Request | Answer |
+| --- | --- |
+| `history` (`since`, `until`, `before_id`, `limit`, `min_severity`, `kinds`, `search`, `program`, `unreviewed_only`, `token`) | One page of events, newest first, plus `next_before_id` for the next page |
+| `history_days` (`since`, `until`) | Events per local calendar day, per severity |
+| `finding_history` (same filters, `resolved_only`, `offset`) | Findings including ones that went away, with `resolved_at` |
+| `away_periods` (`since`, `until`) | Screen locked → unlocked intervals |
+| `program_profile` (`path`) | First seen and run count, signature, its findings and its alerts |
+| `changes_since` (`since`, `min_severity`) | Findings that appeared or went away, programs that ran for the first time |
+| `annotate` (`event_id`, `note`) / `set_reviewed` (`event_id`, `reviewed`) | The event's note and review mark (notes are plain text, at most 2000 characters) |
+
+`kinds` matches an event kind (`microphone_on`), an activity kind (`sudo`) or a finding
+category (`persistence`). Filters run in SQLite with `json_extract`, with indexes on time,
+program path and activity kind. **Days are bucketed by the daemon** in its own time zone
+(SQLite's `localtime`); each day carries its local midnight, so clients don't have to guess.
+A finding that goes away and comes back starts a new episode: its row then shows the latest one.
+
+**Retention** (at startup, then daily): info-level events (and scans, mic/camera, lock/unlock)
+are kept 90 days unless they carry a note, everything else a year; findings that went away are
+forgotten a year after they did. Active findings, trust rules and program familiarity are never
+removed. The constants live in `crates/vogter-store/src/history.rs`. All schema additions use
+`IF NOT EXISTS`, so older databases upgrade in place.
 
 ## Secrets in command lines
 

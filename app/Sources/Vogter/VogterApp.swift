@@ -45,7 +45,7 @@ struct MenuBarLabel: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            Image(systemName: model.menuBarSymbol)
+            Image(nsImage: MenuBarIcon.image(model.menuBarState))
             if model.status?.av.microphoneInUse == true { Image(systemName: "mic.fill") }
             if model.status?.av.cameraInUse == true { Image(systemName: "video.fill") }
         }

@@ -4,8 +4,11 @@
 //! seen and why it matters. Severity leans on code signing, because on macOS
 //! "who vouches for this code" is the strongest cheap signal available.
 
+mod browser;
+pub mod downloads;
 mod exec;
 mod files;
+mod takeover;
 pub mod trust;
 
 pub use exec::assess_exec;
@@ -106,7 +109,9 @@ pub fn assess(snap: &Snapshot) -> Vec<Finding> {
             source: None,
         });
     }
+    out.extend(takeover::assess(snap));
     out.extend(health(snap));
+    out.extend(browser::assess(&snap.browser_extensions));
 
     out.sort_by(|a, b| {
         b.severity

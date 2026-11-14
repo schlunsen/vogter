@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/images/hero.jpg" alt="Soft mist over calm hills and a still lake, with a single smooth stone resting on the water" width="100%">
-</p>
-
 <div align="center">
 
 <img src="docs/images/icon.png" width="112" height="112" alt="Vogter icon">
@@ -43,10 +39,10 @@ Vogter lives as a small icon in your menu bar. Most of the time it simply rests 
 
 <table>
   <tr>
-    <td width="25%"><img src="docs/images/watching.jpg" alt="A stone lantern in a raked-sand garden"></td>
-    <td width="25%"><img src="docs/images/startup.jpg" alt="Balanced stacked stones on raked sand"></td>
-    <td width="25%"><img src="docs/images/listening.jpg" alt="A drop falling into a still bowl of water"></td>
-    <td width="25%"><img src="docs/images/away.jpg" alt="A crescent moon fading into dawn over still water"></td>
+    <td width="25%"><img src="docs/images/watching.svg" alt="A keyboard" width="100%"></td>
+    <td width="25%"><img src="docs/images/startup.svg" alt="A power symbol" width="100%"></td>
+    <td width="25%"><img src="docs/images/listening.svg" alt="A microphone" width="100%"></td>
+    <td width="25%"><img src="docs/images/away.svg" alt="A crescent moon" width="100%"></td>
   </tr>
   <tr>
     <td align="center"><sub>Who can read your keystrokes</sub></td>
@@ -63,6 +59,24 @@ Vogter lives as a small icon in your menu bar. Most of the time it simply rests 
   your camera and microphone, and whether those apps are properly signed.
 - **What starts with your Mac.** Things that launch at login or boot: scripts, unsigned
   programs, and items pretending to be Apple's.
+- **Other ways in.** Lines in your shell startup files (`~/.zshrc` and friends) that download
+  and run code, hide encoded commands, or quietly wrap `sudo` and `ssh`. SSH keys that can log
+  in to your Mac, `/etc/hosts` entries that redirect or block Apple, update and security sites,
+  and passwordless `sudo` rules. Configuration profiles, login hooks, system extensions and
+  background items too. Normal setups stay quiet, and an employer's device management is named
+  as what it is.
+- **Your downloads.** When an app, installer or disk image lands in Downloads, or you open a
+  disk image, Vogter checks who signed it and whether Apple notarized it, before you open it. A
+  notarized download gets a quiet note. An unsigned app, or one dressed up as Zoom, Chrome or a
+  crypto wallet, gets a clear one, because a download page that tells you to right-click → Open
+  is how malware like AMOS gets in. It also notices if the "downloaded from the internet" flag
+  has been removed.
+- **Your browser extensions.** Every extension in Chrome, Brave, Edge, Arc, Vivaldi, Firefox
+  and Safari, in every profile. An extension that can read and change everything on every
+  website, and also your cookies or web traffic, deserves a second look. Password managers and
+  ad blockers need that, but so do the extensions that steal logins and drain crypto wallets.
+  Extensions that didn't come from a store, or were loaded in developer mode, are flagged more
+  strongly, and each alert tells you where to remove it.
 - **Programs as they start.** Fake password dialogs (the way info-stealers like AMOS ask for
   your password), Keychain dumping, `curl … | sh`, hidden encoded commands, Gatekeeper being
   turned off, the "downloaded from the internet" flag being removed, new user accounts, scripts
@@ -124,6 +138,27 @@ critical alerts are never softened.
     <td align="center"><sub>Status</sub></td>
   </tr>
 </table>
+
+<p align="center"><img src="docs/images/divider.svg" alt="" width="60%"></p>
+
+## Looking back
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/history-dark.png">
+  <img src="docs/images/history-light.png" alt="The History tab: a six-month calendar heatmap, a list of recent days, and today's timeline with a shaded 'While you were away' band">
+</picture>
+
+The **History** tab keeps a quiet record of the last few months:
+
+- **A calendar** where calm days are pale sage and busier ones warm up.
+- **Each day's timeline**, with your time away shown as a soft band.
+- **Search and filters**: narrow it to one program, or to the alerts worth a look.
+- **"What changed since last week?"** shows new startup items, permissions and programs at a glance.
+- **Who is this?** tells you when a program first ran here and what it has done since.
+- **Notes**: leave yourself a note, or mark an alert reviewed.
+
+Everyday events are kept for 90 days and alerts for a year, all on your Mac. From the terminal:
+`vogter history`, `vogter changes --since 7d`, `vogter program <path>`.
 
 <p align="center"><img src="docs/images/divider.svg" alt="" width="60%"></p>
 
@@ -200,13 +235,17 @@ on their own.
 | `vogter findings [--all]` | Open findings with their keys (`--all` includes acknowledged ones) |
 | `vogter events [-n 30]` | Recent activity with ids |
 | `vogter show <id>` | Everything known about one event |
+| `vogter history [--since 7d] [-s medium] [--search text] [--program path]` | Look back through events (`--days`, `--findings`, `--away` for summaries) |
+| `vogter changes [--since 7d]` | What's new or gone since a date |
+| `vogter program <path>` | Who is this? First seen, runs, findings and alerts for one program |
+| `vogter note <id> <text>` / `vogter review <id>` | Add a note to an event, or mark it reviewed |
 | `vogter trust <key>` / `vogter trust --event <id> [--all-checks]` | Trust what a finding or event is about |
 | `vogter trusted` | List trust rules |
 | `vogter untrust <id>` | Remove a trust rule |
 | `vogter ack <key>` | Hide a finding until it goes away and comes back |
 | `vogter watch` | Live event stream |
 | `vogter scan-now` | Ask the service to look right away |
-| `vogter inventory [processes\|taps\|tcc\|launchd\|cron\|listeners\|health]` | Raw sensor data as JSON |
+| `vogter inventory [section]` | Raw sensor data as JSON. Sections: `processes`, `taps`, `tcc`, `launchd`, `cron`, `listeners`, `health`, `browser-extensions`, `shell`, `ssh`, `hosts`, `sudoers`, `profiles`, `hooks`, `extensions`, `btm` |
 
 <p align="center"><img src="docs/images/divider.svg" alt="" width="60%"></p>
 
@@ -214,8 +253,10 @@ on their own.
 
 - **Everything stays on your Mac.** History lives in a small SQLite database in
   `~/Library/Application Support/Vogter/` (or `/Library/Application Support/Vogter/` when the
-  service runs as root). Vogter makes no network connections: no telemetry, no cloud lookups,
-  nothing phoning home.
+  service runs as root). Vogter sends nothing anywhere: no telemetry, no accounts, no cloud
+  lookups of your data. The one exception is Apple's own Gatekeeper check (`spctl`), which
+  Vogter uses to confirm that a new download is notarized and which may ask Apple's servers,
+  just as opening the file would.
 - **Secrets are wiped from what it records.** Passwords, tokens and API keys in command lines
   (`--password=…`, `Authorization:` headers, `https://user:pass@…`, GitHub, AWS and Slack-style
   tokens) are replaced with `[redacted]` before anything is stored or shown.
@@ -234,7 +275,10 @@ on their own.
 - **It isn't an antivirus.** Vogter doesn't scan files for known malware. It watches for
   *behaviour*: spying, persistence, tampering. Keep macOS's built-in XProtect and Gatekeeper on,
   and Vogter will tell you if they're off.
-- **It's young software (v0.1).** Expect a few rough edges, and please
+- **Some checks need the root service.** sudoers rules, Mac-wide configuration profiles and
+  background items are only visible when Vogter runs as root; otherwise the Status tab lists
+  them as limited.
+- **It's young software (v0.2).** Expect a few rough edges, and please
   [open an issue](https://github.com/schlunsen/vogter/issues) when you find one.
 
 ## For developers
@@ -283,4 +327,4 @@ only, since they're GPL), [Santa](https://github.com/northpolesec/santa) and
 
 ## License
 
-[Apache-2.0](LICENSE). Illustrations were generated for this project and live in `docs/images/`.
+[Apache-2.0](LICENSE).

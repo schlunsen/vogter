@@ -219,7 +219,7 @@ fn script_argument(args: &[String]) -> Option<&str> {
 /// True if one of `sources` feeds, within the same pipeline, into a shell:
 /// `curl -fsSL url | bash`, `echo … | base64 -d | sh`. Separators (`;`, `&&`,
 /// `||`, newlines) end a pipeline, so unrelated mentions don't count.
-fn pipeline_into_shell(cmd: &str, sources: &[&str]) -> bool {
+pub(crate) fn pipeline_into_shell(cmd: &str, sources: &[&str]) -> bool {
     cmd.split(['\n', ';'])
         .flat_map(|chunk| chunk.split("&&"))
         .flat_map(|chunk| chunk.split("||"))

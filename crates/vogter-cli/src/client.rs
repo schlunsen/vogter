@@ -7,13 +7,25 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, bail};
 use vogter_ipc::{Event, LoggedEvent, Message, Request, read_line, write_line};
 
-struct Conn {
+/// Match a reply, or fail with the daemon's error message.
+macro_rules! reply {
+    ($msg:expr, $pat:pat => $out:expr) => {
+        match $msg {
+            $pat => $out,
+            vogter_ipc::Message::Error { message } => anyhow::bail!(message),
+            other => anyhow::bail!("unexpected reply: {other:?}"),
+        }
+    };
+}
+pub(crate) use reply;
+
+pub(crate) struct Conn {
     reader: BufReader<UnixStream>,
     writer: UnixStream,
 }
 
 impl Conn {
-    fn open() -> Result<Self> {
+    pub(crate) fn open() -> Result<Self> {
         for path in vogter_ipc::socket_candidates() {
             if let Ok(s) = UnixStream::connect(&path) {
                 return Ok(Conn {
@@ -25,7 +37,7 @@ impl Conn {
         bail!("vogterd is not running (start it with `cargo run -p vogterd`)")
     }
 
-    fn call(&mut self, req: Request) -> Result<Message> {
+    pub(crate) fn call(&mut self, req: Request) -> Result<Message> {
         write_line(&mut self.writer, &req)?;
         self.next()
     }
@@ -245,7 +257,11 @@ pub fn watch() -> Result<()> {
 }
 
 fn describe(e: &LoggedEvent) -> String {
-    let what = match &e.event {
+    format!("{} {}", ago(e.at), describe_event(&e.event))
+}
+
+pub(crate) fn describe_event(event: &Event) -> String {
+    match event {
         Event::ScanCompleted {
             findings,
             new,
@@ -287,8 +303,7 @@ fn describe(e: &LoggedEvent) -> String {
         Event::MicrophoneOff => "microphone off".into(),
         Event::CameraOn => "CAMERA ON".into(),
         Event::CameraOff => "camera off".into(),
-    };
-    format!("{} {what}", ago(e.at))
+    }
 }
 
 fn ago(t: u64) -> String {

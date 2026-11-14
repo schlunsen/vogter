@@ -109,7 +109,7 @@ fn bundle_path(bundle_id: &str) -> Option<String> {
 
 /// Who needs Full Disk Access: the service binary itself when it runs on its
 /// own (launchd), or the terminal it was started from.
-fn full_disk_access_hint() -> String {
+pub(crate) fn full_disk_access_hint() -> String {
     let exe = std::env::current_exe()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| "vogterd".into());

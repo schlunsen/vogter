@@ -22,10 +22,11 @@ enum Demo {
         model.trustRules = decode([TrustRule].self, trustRules(now: now))
         model.selectedEventID = selectedEventID
         model.simulatedRunningPIDs = [runningPID]
+        fillHistory(model.history)
         return model
     }
 
-    private static func decode<T: Decodable>(_ type: T.Type, _ json: String) -> T {
+    static func decode<T: Decodable>(_ type: T.Type, _ json: String) -> T {
         let d = JSONDecoder()
         d.keyDecodingStrategy = .convertFromSnakeCase
         do {
@@ -75,7 +76,7 @@ enum Demo {
         """
     }
 
-    private static func events(now: UInt64) -> String {
+    static func events(now: UInt64) -> String {
         let passwordAdvice = "Real macOS password prompts come from the system, not from scripts. If you didn't just run a script that needs your password, don't type it in. Note which program started it (below), quit it, and check startup items and recent downloads."
         let sudoAdvice = "Someone tried to run a command as administrator and failed. Fine if that was you mistyping your password; repeated failures you didn't cause are worth looking into."
         return """
